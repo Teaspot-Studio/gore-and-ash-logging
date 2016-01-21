@@ -1,14 +1,14 @@
 # For more information, see: https://github.com/commercialhaskell/stack/blob/release/doc/yaml_configuration.md
 
 # Specifies the GHC version and set of packages available (e.g., lts-3.5, nightly-2015-09-21, ghc-7.10.2)
-resolver: lts-4.0
+resolver: lts-4.2
 
 # Local packages, usually specified by relative directory name
 packages:
 - '.'
 - location:
     git: https://github.com/Teaspot-Studio/gore-and-ash.git
-    commit: 7b80a18cde740c42be8ad69b6f99f0c8836954d6
+    commit: 8405b253e2cfc17e6eff39a251387384f33fbd4a
 - location:
     git: https://github.com/Teaspot-Studio/netwire.git
     commit: c9f8034c4f24c4491db88782142e0fcdf8bba540
