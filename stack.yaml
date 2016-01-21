@@ -8,7 +8,7 @@ packages:
 - '.'
 - location:
     git: https://github.com/Teaspot-Studio/gore-and-ash.git
-    commit: 285850f31e5e106e0c45d3ee3834137ee3ee46a6
+    commit: 7b80a18cde740c42be8ad69b6f99f0c8836954d6
 - location:
     git: https://github.com/Teaspot-Studio/netwire.git
     commit: c9f8034c4f24c4491db88782142e0fcdf8bba540
