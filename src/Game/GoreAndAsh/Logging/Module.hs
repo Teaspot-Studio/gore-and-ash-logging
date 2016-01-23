@@ -1,4 +1,16 @@
 {-# OPTIONS_GHC -fno-warn-orphans #-}
+{-|
+Module      : Game.GoreAndAsh.Logging.Module
+Description : Monad transformer for logging module
+Copyright   : (c) Anton Gushcha, 2015-2016
+License     : BSD3
+Maintainer  : ncrashed@gmail.com
+Stability   : experimental
+Portability : POSIX
+
+Contains description of logging monad transformer and instance for
+'GameModule' class.
+-}
 module Game.GoreAndAsh.Logging.Module(
     LoggingT(..)
   ) where
@@ -12,6 +24,25 @@ import qualified Data.Text.IO as T
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
 
+-- | Monad transformer of logging core module.
+--
+-- [@s@] - State of next core module in modules chain;
+--
+-- [@m@] - Next monad in modules monad stack;
+--
+-- [@a@] - Type of result value;
+--
+-- How to embed module:
+-- 
+-- @
+-- type AppStack = ModuleStack [LoggingT, ... other modules ... ] IO
+--
+-- newtype AppMonad a = AppMonad (AppStack a)
+--   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, LoggingMonad)
+-- @
+--
+-- The module is pure within first phase (see 'ModuleStack' docs) and could be used
+-- with 'Identity' end monad.
 newtype LoggingT s m a = LoggingT { runLoggingT :: StateT (LoggingState s) m a }
   deriving (Functor, Applicative, Monad, MonadState (LoggingState s), MonadFix, MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadMask)
 

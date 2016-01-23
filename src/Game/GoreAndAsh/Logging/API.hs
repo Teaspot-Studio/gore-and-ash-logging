@@ -1,21 +1,32 @@
+{-|
+Module      : Game.GoreAndAsh.Module
+Description : Module that contains monadic and arrow API of logging module.
+Copyright   : (c) Anton Gushcha, 2015-2016
+License     : BSD3
+Maintainer  : ncrashed@gmail.com
+Stability   : experimental
+Portability : POSIX
+
+Module that contains monadic and arrow API of logging module.
+-}
 module Game.GoreAndAsh.Logging.API(
     LoggingMonad(..)
-  -- | Arrow API
+  -- * Arrow API
   , logA
   , logALn
   , logE
   , logELn
 
-  -- | Every frame
+  -- ** Every frame
   , logInfoA
   , logWarnA
   , logErrorA
-  -- | Event based
+  -- ** Event based
   , logInfoE
   , logWarnE
   , logErrorE
 
-  -- | Event tracing
+  -- ** Event tracing
   , traceEvent
   , traceEventShow
   ) where
@@ -33,7 +44,9 @@ import Game.GoreAndAsh.Logging.Module
 
 -- | Low level API for module
 class Monad m => LoggingMonad m where 
+  -- | Put message to the console.
   putMsgM :: Text -> m ()
+  -- | Put message and new line to the console.
   putMsgLnM :: Text -> m ()
 
 instance {-# OVERLAPPING #-} Monad m => LoggingMonad (LoggingT s m) where
