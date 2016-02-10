@@ -20,6 +20,7 @@ import Control.Monad.Fix
 import Control.Monad.State.Strict
 import qualified Data.Sequence as S
 import qualified Data.Text.IO as T
+import Data.Proxy 
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
@@ -65,5 +66,5 @@ instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where
       , loggingNextState = s
       }
 
-  withModule _ = id
+  withModule _ = withModule (Proxy :: Proxy m)
   cleanupModule _ = return ()

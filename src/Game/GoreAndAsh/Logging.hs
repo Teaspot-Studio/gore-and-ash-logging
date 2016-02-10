@@ -39,7 +39,12 @@ instance GameModule AppMonad AppState where
 -- | Arrow that is build over the monad stack
 type AppWire a b = GameWire AppMonad a b
 @
-
+playerActor :: ActorMonad m => (PlayerId -> Player) -> GameActor m PlayerId Game Player 
+playerActor initialPlayer = makeActor $ \i -> stateWire (initialPlayer i) $ mainController i
+  where
+  mainController i = proc (g, p) -> do
+    
+@
 -}
 module Game.GoreAndAsh.Logging(
   -- * Low-level API
