@@ -15,12 +15,15 @@ module Game.GoreAndAsh.Logging.Module(
     LoggingT(..)
   ) where
 
+import Control.Monad.Base
 import Control.Monad.Catch
+import Control.Monad.Error.Class
 import Control.Monad.Fix 
 import Control.Monad.State.Strict
+import Control.Monad.Trans.Resource
+import Data.Proxy 
 import qualified Data.Sequence as S
 import qualified Data.Text.IO as T
-import Data.Proxy 
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
@@ -45,8 +48,14 @@ import Game.GoreAndAsh.Logging.State
 -- The module is pure within first phase (see 'ModuleStack' docs) and could be used
 -- with 'Identity' end monad.
 newtype LoggingT s m a = LoggingT { runLoggingT :: StateT (LoggingState s) m a }
-  deriving (Functor, Applicative, Monad, MonadState (LoggingState s), MonadFix, MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadMask)
+  deriving (Functor, Applicative, Monad, MonadState (LoggingState s), MonadFix, MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadError e)
 
+instance MonadBase IO m => MonadBase IO (LoggingT s m) where
+  liftBase = LoggingT . liftBase
+
+instance MonadResource m => MonadResource (LoggingT s m) where 
+  liftResourceT = LoggingT . liftResourceT 
+  
 instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where 
   type ModuleState (LoggingT s m) = LoggingState s
   runModule (LoggingT m) s = do
