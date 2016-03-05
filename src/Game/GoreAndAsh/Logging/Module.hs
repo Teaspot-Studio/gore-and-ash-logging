@@ -18,12 +18,13 @@ module Game.GoreAndAsh.Logging.Module(
 import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.Error.Class
-import Control.Monad.Fix 
+import Control.Monad.Fix
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Resource
-import Data.Proxy 
+import Data.Proxy
 import qualified Data.Sequence as S
 import qualified Data.Text.IO as T
+import qualified System.IO as IO
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
@@ -37,7 +38,7 @@ import Game.GoreAndAsh.Logging.State
 -- [@a@] - Type of result value;
 --
 -- How to embed module:
--- 
+--
 -- @
 -- type AppStack = ModuleStack [LoggingT, ... other modules ... ] IO
 --
@@ -53,27 +54,24 @@ newtype LoggingT s m a = LoggingT { runLoggingT :: StateT (LoggingState s) m a }
 instance MonadBase IO m => MonadBase IO (LoggingT s m) where
   liftBase = LoggingT . liftBase
 
-instance MonadResource m => MonadResource (LoggingT s m) where 
-  liftResourceT = LoggingT . liftResourceT 
-  
-instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where 
+instance MonadResource m => MonadResource (LoggingT s m) where
+  liftResourceT = LoggingT . liftResourceT
+
+instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where
   type ModuleState (LoggingT s m) = LoggingState s
   runModule (LoggingT m) s = do
     ((a, s'), nextState) <- runModule (runStateT m s) (loggingNextState s)
     printAllMsgs s'
-    return (a, s' { 
+    return (a, s' {
         loggingMsgs = S.empty
-      , loggingNextState = nextState 
+      , loggingNextState = nextState
       })
-    where 
-      printAllMsgs LoggingState{..} = liftIO $ mapM_ T.putStrLn loggingMsgs      
+    where
+      printAllMsgs LoggingState{..} = liftIO $ mapM_ T.putStrLn loggingMsgs
 
-  newModuleState = do
-    s <- newModuleState
-    return $ LoggingState {
-        loggingMsgs = S.empty
-      , loggingNextState = s
-      }
+  newModuleState = emptyLoggingState <$> newModuleState
 
   withModule _ = withModule (Proxy :: Proxy m)
-  cleanupModule _ = return ()
+  cleanupModule LoggingState{..} = case loggingFile of
+    Nothing -> return ()
+    Just h -> IO.hClose h

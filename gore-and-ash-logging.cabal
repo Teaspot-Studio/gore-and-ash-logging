@@ -31,8 +31,10 @@ library
                      , text-show >= 2
                      , transformers >= 0.4.2
                      , transformers-base >= 0.4.4
-
-  default-extensions:  
+                     , hashable >= 1.2.4.0
+                     , unordered-containers >= 0.2.5.1
+                     
+  default-extensions:
                        DataKinds
                        DeriveGeneric
                        FlexibleInstances

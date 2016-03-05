@@ -13,6 +13,7 @@ module Game.GoreAndAsh.Logging.State(
     LoggingState(..)
   , LoggingLevel(..)
   , LoggingSink(..)
+  , emptyLoggingState
   ) where
 
 import Control.DeepSeq
@@ -60,9 +61,25 @@ type LoggingFilter = H.HashMap LoggingLevel (HS.HashSet LoggingSink)
 data LoggingState s = LoggingState {
   loggingMsgs :: !(S.Seq Text)
 , loggingNextState :: !s
-, loggingFile :: !(Maybe Handler)
-, loggingFilter ::
+, loggingFile :: !(Maybe Handle)
+, loggingFilter :: !(LoggingFilter)
 , loggignDebug :: !Bool
 } deriving (Generic)
 
-instance NFData s => NFData (LoggingState s)
+instance NFData s => NFData (LoggingState s) where
+  rnf LoggingState{..} =
+     loggingMsgs `deepseq`
+     loggingNextState `deepseq`
+     loggingFile `seq`
+     loggingFilter `deepseq`
+     loggignDebug `seq` ()
+
+-- | Create empty module state
+emptyLoggingState :: s -> LoggingState s
+emptyLoggingState s = LoggingState {
+    loggingMsgs = S.empty
+  , loggingNextState = s
+  , loggingFile = Nothing
+  , loggingFilter = H.empty
+  , loggignDebug = False
+  }
