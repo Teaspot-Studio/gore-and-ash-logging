@@ -1,5 +1,5 @@
 name:                gore-and-ash-logging
-version:             1.2.1.0
+version:             2.0.0.0
 synopsis:            Core module for gore-and-ash with logging utilities
 description:         Please see README.md
 homepage:            https://github.com/Teaspot-Studio/gore-and-ash-logging
@@ -33,7 +33,8 @@ library
                      , transformers-base >= 0.4.4
                      , hashable >= 1.2.4.0
                      , unordered-containers >= 0.2.5.1
-                     
+                     , extra >= 1.4.3
+
   default-extensions:
                        DataKinds
                        DeriveGeneric

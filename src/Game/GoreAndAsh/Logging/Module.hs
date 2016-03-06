@@ -18,10 +18,12 @@ module Game.GoreAndAsh.Logging.Module(
 import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.Error.Class
+import Control.Monad.Extra (whenJust)
 import Control.Monad.Fix
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Resource
 import Data.Proxy
+import Data.Text (Text)
 import qualified Data.Sequence as S
 import qualified Data.Text.IO as T
 import qualified System.IO as IO
@@ -67,7 +69,9 @@ instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where
       , loggingNextState = nextState
       })
     where
-      printAllMsgs LoggingState{..} = liftIO $ mapM_ T.putStrLn loggingMsgs
+      printAllMsgs ls@LoggingState{..} = do
+        mapM_ (uncurry $ consoleOutput ls) loggingMsgs
+        mapM_ (uncurry $ fileOutput ls) loggingMsgs
 
   newModuleState = emptyLoggingState <$> newModuleState
 
@@ -75,3 +79,13 @@ instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where
   cleanupModule LoggingState{..} = case loggingFile of
     Nothing -> return ()
     Just h -> IO.hClose h
+
+-- | Output given message to logging file if allowed
+fileOutput :: MonadIO m => LoggingState s -> LoggingLevel -> Text -> m ()
+fileOutput ls ll msg = when (filterLogMessage ls ll LoggingFile) $
+  whenJust (loggingFile ls) $ \h -> liftIO $ T.hPutStrLn h msg
+
+-- | Output given message to console if allowed
+consoleOutput :: MonadIO m => LoggingState s -> LoggingLevel -> Text -> m ()
+consoleOutput ls ll msg = when (filterLogMessage ls ll LoggingConsole) $
+  liftIO $ T.putStrLn msg

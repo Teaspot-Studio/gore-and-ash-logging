@@ -14,6 +14,7 @@ module Game.GoreAndAsh.Logging.State(
   , LoggingLevel(..)
   , LoggingSink(..)
   , emptyLoggingState
+  , filterLogMessage
   ) where
 
 import Control.DeepSeq
@@ -35,6 +36,7 @@ data LoggingSink =
   deriving (Eq, Ord, Bounded, Show, Read, Generic)
 
 instance NFData LoggingSink
+instance Hashable LoggingSink
 
 -- | Describes important of logging message
 data LoggingLevel =
@@ -59,7 +61,7 @@ type LoggingFilter = H.HashMap LoggingLevel (HS.HashSet LoggingSink)
 --
 -- [@s@] next state, states of modules are chained via nesting
 data LoggingState s = LoggingState {
-  loggingMsgs :: !(S.Seq Text)
+  loggingMsgs :: !(S.Seq (LoggingLevel, Text))
 , loggingNextState :: !s
 , loggingFile :: !(Maybe Handle)
 , loggingFilter :: !(LoggingFilter)
@@ -83,3 +85,9 @@ emptyLoggingState s = LoggingState {
   , loggingFilter = H.empty
   , loggignDebug = False
   }
+
+-- | Returns 'True' if given message level is allowed to go in the sink
+filterLogMessage :: LoggingState s -> LoggingLevel -> LoggingSink -> Bool
+filterLogMessage LoggingState{..} ll ls = case H.lookup ll loggingFilter of
+  Nothing -> True
+  Just ss -> HS.member ls ss

@@ -10,7 +10,7 @@ Portability : POSIX
 The module contains all API for Gore&Ash logging module. The module doesn't depends on
 others core modules and could be place in any place in game monad stack.
 
-The core module is pure on it first phase and could be used with 'Identity' end monad.
+The core module is not pure on it first phase and could be used with 'IO' as end monad.
 See 'ModuleStack' documentation.
 
 Example of embedding:
@@ -21,46 +21,51 @@ type AppStack = ModuleStack [LoggingT, ... other modules ... ] IO
 newtype AppState = AppState (ModuleState AppStack)
   deriving (Generic)
 
-instance NFData AppState 
+instance NFData AppState
 
 -- | Wrapper around type family
 newtype AppMonad a = AppMonad (AppStack a)
   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, LoggingMonad, ... other modules monads ... )
-  
-instance GameModule AppMonad AppState where 
+
+instance GameModule AppMonad AppState where
   type ModuleState AppMonad = AppState
-  runModule (AppMonad m) (AppState s) = do 
-    (a, s') <- runModule m s 
+  runModule (AppMonad m) (AppState s) = do
+    (a, s') <- runModule m s
     return (a, AppState s')
   newModuleState = AppState <$> newModuleState
   withModule _ = withModule (Proxy :: Proxy AppStack)
-  cleanupModule (AppState s) = cleanupModule s 
+  cleanupModule (AppState s) = cleanupModule s
 
 -- | Arrow that is build over the monad stack
 type AppWire a b = GameWire AppMonad a b
 @
-playerActor :: ActorMonad m => (PlayerId -> Player) -> GameActor m PlayerId Game Player 
+playerActor :: ActorMonad m => (PlayerId -> Player) -> GameActor m PlayerId Game Player
 playerActor initialPlayer = makeActor $ \i -> stateWire (initialPlayer i) $ mainController i
   where
   mainController i = proc (g, p) -> do
-    
+
 @
 -}
 module Game.GoreAndAsh.Logging(
   -- * Low-level API
     LoggingState
   , LoggingT
+  , LoggingLevel(..)
+  , LoggingSink(..)
   , LoggingMonad(..)
+  , loggingSetFile
   -- * Arrow API
   , logA
   , logALn
   , logE
   , logELn
   -- ** Every frame
+  , logDebugA
   , logInfoA
   , logWarnA
   , logErrorA
   -- ** Event based
+  , logDebugE
   , logInfoE
   , logWarnE
   , logErrorE
@@ -70,5 +75,5 @@ module Game.GoreAndAsh.Logging(
   ) where
 
 import Game.GoreAndAsh.Logging.API
-import Game.GoreAndAsh.Logging.Module 
+import Game.GoreAndAsh.Logging.Module
 import Game.GoreAndAsh.Logging.State

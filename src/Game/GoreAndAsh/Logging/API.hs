@@ -11,6 +11,7 @@ Module that contains monadic and arrow API of logging module.
 -}
 module Game.GoreAndAsh.Logging.API(
     LoggingMonad(..)
+  , loggingSetFile
   -- * Arrow API
   , logA
   , logALn
@@ -18,10 +19,12 @@ module Game.GoreAndAsh.Logging.API(
   , logELn
 
   -- ** Every frame
+  , logDebugA
   , logInfoA
   , logWarnA
   , logErrorA
   -- ** Event based
+  , logDebugE
   , logInfoE
   , logWarnE
   , logErrorE
@@ -31,84 +34,124 @@ module Game.GoreAndAsh.Logging.API(
   , traceEventShow
   ) where
 
+import Control.Monad.Extra (whenJust)
 import Control.Monad.State.Strict
 import Control.Wire
 import Data.Text
 import Prelude hiding (id, (.))
-import qualified Data.Sequence as S 
-import TextShow 
+import qualified Data.HashMap.Strict as H
+import qualified Data.HashSet as HS
+import qualified Data.Sequence as S
+import System.IO as IO
+import TextShow
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
 import Game.GoreAndAsh.Logging.Module
 
 -- | Low level API for module
-class Monad m => LoggingMonad m where 
+class MonadIO m => LoggingMonad m where
   -- | Put message to the console.
-  putMsgM :: Text -> m ()
+  putMsgM :: LoggingLevel -> Text -> m ()
   -- | Put message and new line to the console.
-  putMsgLnM :: Text -> m ()
+  putMsgLnM :: LoggingLevel -> Text -> m ()
+  -- | Setting current logging file handler
+  loggingSetHandle :: IO.Handle -> m ()
+  -- | Setting allowed sinks for given logging level.
+  --
+  -- By default all messages are passed into file and console.
+  loggingSetFilter :: LoggingLevel -> [LoggingSink] -> m ()
 
-instance {-# OVERLAPPING #-} Monad m => LoggingMonad (LoggingT s m) where
-  putMsgM t = do 
-    cntx <- get 
-    let newMsgs = case S.viewr $ loggingMsgs cntx of 
-          S.EmptyR -> loggingMsgs cntx S.|> t
-          (s' S.:> t') -> s' S.|> (t' <> t)
+instance {-# OVERLAPPING #-} MonadIO m => LoggingMonad (LoggingT s m) where
+  putMsgM l t = do
+    cntx <- get
+    let newMsgs = case S.viewr $ loggingMsgs cntx of
+          S.EmptyR -> loggingMsgs cntx S.|> (l, t)
+          (s' S.:> (l', t')) -> s' S.|> (l', t' <> t)
     put $ cntx { loggingMsgs = newMsgs }
 
-  putMsgLnM t = do 
-    cntx <- get 
-    put $ cntx { loggingMsgs = loggingMsgs cntx S.|> t }
+  putMsgLnM l t = do
+    cntx <- get
+    put $ cntx { loggingMsgs = loggingMsgs cntx S.|> (l, t) }
 
-instance {-# OVERLAPPABLE #-} (Monad (mt m), LoggingMonad m, MonadTrans mt) => LoggingMonad (mt m) where 
-  putMsgM = lift . putMsgM
-  putMsgLnM = lift . putMsgLnM
+  loggingSetHandle h = do
+    cntx <- get
+    whenJust (loggingFile cntx) $ liftIO . IO.hClose
+    put $ cntx { loggingFile = Just h }
+
+  loggingSetFilter l ss = do
+    cntx <- get
+    let lfilter = case l `H.lookup` loggingFilter cntx of
+          Nothing -> H.insert l (HS.fromList ss) . loggingFilter $ cntx
+          Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') . loggingFilter $ cntx
+    put $ cntx { loggingFilter = lfilter }
+
+instance {-# OVERLAPPABLE #-} (MonadIO (mt m), LoggingMonad m, MonadTrans mt) => LoggingMonad (mt m) where
+  putMsgM a b = lift $ putMsgM a b
+  putMsgLnM a b = lift $ putMsgLnM a b
+  loggingSetHandle = lift . loggingSetHandle
+  loggingSetFilter a b = lift $ loggingSetFilter a b
 
 -- | Put message to console on every frame without newline
-logA :: LoggingMonad m => GameWire m Text ()
-logA = liftGameMonad1 putMsgM
+logA :: LoggingMonad m => LoggingLevel -> GameWire m Text ()
+logA l = liftGameMonad1 (putMsgM l)
 
 -- | Put message to console on every frame
-logALn :: LoggingMonad m => GameWire m Text ()
-logALn = liftGameMonad1 putMsgLnM
+logALn :: LoggingMonad m => LoggingLevel -> GameWire m Text ()
+logALn l = liftGameMonad1 (putMsgLnM l)
 
 -- | Put message to console on event without newline
-logE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logE = liftGameMonadEvent1 putMsgM
+logE :: LoggingMonad m => LoggingLevel -> GameWire m (Event Text) (Event ())
+logE l = liftGameMonadEvent1 (putMsgM l)
 
 -- | Put message to console on event
-logELn :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logELn = liftGameMonadEvent1 putMsgLnM
+logELn :: LoggingMonad m => LoggingLevel -> GameWire m (Event Text) (Event ())
+logELn l = liftGameMonadEvent1 (putMsgLnM l)
+
+-- | Put info msg to console
+logDebugA :: LoggingMonad m => GameWire m Text ()
+logDebugA = logALn LogDebug . arr ("Debug: " <>)
 
 -- | Put info msg to console
 logInfoA :: LoggingMonad m => GameWire m Text ()
-logInfoA = logALn . arr ("Info: " <>)
+logInfoA = logALn LogInfo . arr ("Info: " <>)
 
 -- | Put warn msg to console
 logWarnA :: LoggingMonad m => GameWire m Text ()
-logWarnA = logALn . arr ("Info: " <>)
+logWarnA = logALn LogWarn . arr ("Warning: " <>)
 
 -- | Put error msg to console
 logErrorA :: LoggingMonad m => GameWire m Text ()
-logErrorA = logALn . arr ("Info: " <>)
+logErrorA = logALn LogError . arr ("Error: " <>)
+
+-- | Put info msg to console on event
+logDebugE :: LoggingMonad m => GameWire m (Event Text) (Event ())
+logDebugE = logELn LogDebug . mapE ("Debug: " <>)
 
 -- | Put info msg to console on event
 logInfoE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logInfoE = logELn . mapE ("Info: " <>)
+logInfoE = logELn LogInfo . mapE ("Info: " <>)
 
 -- | Put warn msg to console on event
 logWarnE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logWarnE = logELn . mapE ("Info: " <>)
+logWarnE = logELn LogWarn . mapE ("Warning: " <>)
 
 -- | Put error msg to console on event
 logErrorE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logErrorE = logELn . mapE ("Info: " <>)
+logErrorE = logELn LogError . mapE ("Error: " <>)
 
 -- | Prints event with given function
 traceEvent :: LoggingMonad m => (a -> Text) -> GameWire m (Event a) (Event ())
-traceEvent f = logELn . mapE f
+traceEvent f = logELn LogDebug . mapE f
 
--- | Prints event 
+-- | Prints event
 traceEventShow :: (TextShow a, LoggingMonad m) => GameWire m (Event a) (Event ())
 traceEventShow = traceEvent showt
+
+-- | Helper to set logging file as local path
+loggingSetFile :: (LoggingMonad m) => FilePath -- ^ Path to logging file
+  -> Bool -- ^ If 'False', rewrites contents of the file, if 'True' opens in append mode
+  -> m ()
+loggingSetFile fname isAppend = do
+  h <- liftIO $ IO.openFile fname $ if isAppend then AppendMode else WriteMode
+  loggingSetHandle h

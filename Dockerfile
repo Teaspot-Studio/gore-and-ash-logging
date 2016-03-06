@@ -1,4 +1,4 @@
-FROM phadej/ghc:7.10.2 
+FROM phadej/ghc:7.10.2
 
 ADD mkdocs /opt/project/
 ADD LICENSE /opt/project/
@@ -10,4 +10,4 @@ ADD src /opt/project/src
 
 WORKDIR /opt/project
 
-ENTRYPOINT ["./mkdocs", "gore-and-ash-logging", "1.2.1.0", "NCrashed"]
+ENTRYPOINT ["./mkdocs", "gore-and-ash-logging", "2.0.0.0", "NCrashed"]
