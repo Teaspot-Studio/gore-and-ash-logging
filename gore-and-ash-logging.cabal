@@ -1,5 +1,5 @@
 name:                gore-and-ash-logging
-version:             2.0.1.0
+version:             3.0.0.0
 synopsis:            Core module for gore-and-ash with logging utilities
 description:         Please see README.md
 homepage:            https://github.com/Teaspot-Studio/gore-and-ash-logging
@@ -18,35 +18,37 @@ extra-source-files:
 
 library
   hs-source-dirs:      src
-  exposed-modules:     Game.GoreAndAsh.Logging
-                       Game.GoreAndAsh.Logging.API
-                       Game.GoreAndAsh.Logging.Module
-                       Game.GoreAndAsh.Logging.State
+  exposed-modules:
+    Game.GoreAndAsh.Logging
+    Game.GoreAndAsh.Logging.API
+    Game.GoreAndAsh.Logging.Module
+    Game.GoreAndAsh.Logging.State
 
   default-language:    Haskell2010
-  build-depends:       base >= 4.7 && < 5
-                     , containers >= 0.5.6
-                     , deepseq >= 1.4
-                     , exceptions >= 0.8.0.2
-                     , gore-and-ash >= 1.1.0.0
-                     , mtl >= 2.2
-                     , resourcet >= 1.1.7.1
-                     , text >= 1.2.1
-                     , text-show >= 2
-                     , transformers >= 0.4.2
-                     , transformers-base >= 0.4.4
-                     , hashable >= 1.2.4.0
-                     , unordered-containers >= 0.2.5.1
-                     , extra >= 1.4.3
+  build-depends:
+      base                  >= 4.7      && < 5
+    , containers            >= 0.5.6    && < 0.6
+    , deepseq               >= 1.4      && < 1.5
+    , exceptions            >= 0.8.0.2  && < 0.9
+    , gore-and-ash          >= 2.0.0.0  && < 2.1
+    , mtl                   >= 2.2      && < 2.3
+    , resourcet             >= 1.1.7.1  && < 1.2
+    , text                  >= 1.2.1    && < 1.3
+    , text-show             >= 2        && < 4
+    , transformers          >= 0.4.2    && < 0.6
+    , transformers-base     >= 0.4.4    && < 0.5
+    , hashable              >= 1.2.4.0  && < 1.3
+    , unordered-containers  >= 0.2.5.1  && < 0.3
+    , extra                 >= 1.4.3    && < 1.5
 
   default-extensions:
-                       DataKinds
-                       DeriveGeneric
-                       FlexibleInstances
-                       GeneralizedNewtypeDeriving
-                       MultiParamTypeClasses
-                       OverloadedStrings
-                       RecordWildCards
-                       TypeFamilies
-                       UndecidableInstances
-                       ScopedTypeVariables
+    DataKinds
+    DeriveGeneric
+    FlexibleInstances
+    GeneralizedNewtypeDeriving
+    MultiParamTypeClasses
+    OverloadedStrings
+    RecordWildCards
+    TypeFamilies
+    UndecidableInstances
+    ScopedTypeVariables
