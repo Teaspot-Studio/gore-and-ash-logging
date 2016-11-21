@@ -53,25 +53,27 @@ module Game.GoreAndAsh.Logging(
   , LoggingLevel(..)
   , LoggingSink(..)
   , LoggingMonad(..)
-  , loggingSetFile
-  -- * Arrow API
-  , logA
-  , logALn
-  , logE
-  , logELn
-  -- ** Every frame
-  , logDebugA
-  , logInfoA
-  , logWarnA
-  , logErrorA
-  -- ** Event based
+  , LogStr
+  , toLogStr
+  -- * Reactive API
+  , logDyn
+  , logDynLn
+  -- * Shortcuts
+  -- ** Behavior
+  , logDebug
+  , logInfo
+  , logWarn
+  , logError
+  -- ** Dynamic
+  , logDebugDyn
+  , logInfoDyn
+  , logWarnDyn
+  , logErrorDyn
+  -- ** Event
   , logDebugE
   , logInfoE
   , logWarnE
   , logErrorE
-  -- ** Event tracing
-  , traceEvent
-  , traceEventShow
   ) where
 
 import Game.GoreAndAsh.Logging.API

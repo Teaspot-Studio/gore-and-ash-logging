@@ -19,13 +19,12 @@ module Game.GoreAndAsh.Logging.State(
 
 import Control.DeepSeq
 import Data.Hashable
-import Data.Text
 import GHC.Generics (Generic)
+import System.Log.FastLogger
+import Control.Monad.IO.Class
+
 import qualified Data.HashMap.Strict as H
 import qualified Data.HashSet as HS
-import qualified Data.Sequence as S
-import System.IO
-
 
 -- | Distanation of logging
 data LoggingSink =
@@ -60,34 +59,33 @@ type LoggingFilter = H.HashMap LoggingLevel (HS.HashSet LoggingSink)
 -- | Inner state of logger.
 --
 -- [@s@] next state, states of modules are chained via nesting
-data LoggingState s = LoggingState {
-  loggingMsgs :: !(S.Seq (LoggingLevel, Text))
-, loggingNextState :: !s
-, loggingFile :: !(Maybe Handle)
-, loggingFilter :: !(LoggingFilter)
-, loggignDebug :: !Bool
+data LoggingState = LoggingState {
+  loggingFileSink    :: !(Maybe LoggerSet)
+, loggingConsoleSink :: !LoggerSet
+, loggingFilter      :: !LoggingFilter
+, loggingDebug       :: !Bool
 } deriving (Generic)
 
-instance NFData s => NFData (LoggingState s) where
+instance NFData LoggingState where
   rnf LoggingState{..} =
-     loggingMsgs `deepseq`
-     loggingNextState `deepseq`
-     loggingFile `seq`
-     loggingFilter `deepseq`
-     loggignDebug `seq` ()
+     loggingFileSink `seq`
+     loggingConsoleSink `seq`
+     loggingFilter `seq`
+     loggingDebug `seq` ()
 
 -- | Create empty module state
-emptyLoggingState :: s -> LoggingState s
-emptyLoggingState s = LoggingState {
-    loggingMsgs = S.empty
-  , loggingNextState = s
-  , loggingFile = Nothing
-  , loggingFilter = H.empty
-  , loggignDebug = False
-  }
+emptyLoggingState :: MonadIO m => m LoggingState
+emptyLoggingState = do
+  consoleSink <- liftIO $ newStdoutLoggerSet defaultBufSize
+  return LoggingState {
+      loggingFileSink = Nothing
+    , loggingConsoleSink = consoleSink
+    , loggingFilter = H.empty
+    , loggingDebug = False
+    }
 
 -- | Returns 'True' if given message level is allowed to go in the sink
-filterLogMessage :: LoggingState s -> LoggingLevel -> LoggingSink -> Bool
+filterLogMessage :: LoggingState -> LoggingLevel -> LoggingSink -> Bool
 filterLogMessage LoggingState{..} ll ls = case H.lookup ll loggingFilter of
   Nothing -> True
   Just ss -> HS.member ls ss

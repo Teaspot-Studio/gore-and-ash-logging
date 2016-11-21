@@ -18,15 +18,16 @@ module Game.GoreAndAsh.Logging.Module(
 import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.Error.Class
-import Control.Monad.Extra (whenJust)
+--import Control.Monad.Extra (whenJust)
 import Control.Monad.Fix
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Resource
-import Data.Proxy
-import Data.Text (Text)
-import qualified Data.Sequence as S
-import qualified Data.Text.IO as T
-import qualified System.IO as IO
+--import Data.Proxy
+--import Data.Text (Text)
+
+--import qualified Data.Sequence as S
+--import qualified Data.Text.IO as T
+--import qualified System.IO as IO
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
@@ -50,42 +51,51 @@ import Game.GoreAndAsh.Logging.State
 --
 -- The module is pure within first phase (see 'ModuleStack' docs) and could be used
 -- with 'Identity' end monad.
-newtype LoggingT s m a = LoggingT { runLoggingT :: StateT (LoggingState s) m a }
-  deriving (Functor, Applicative, Monad, MonadState (LoggingState s), MonadFix, MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadError e)
+newtype LoggingT m a = LoggingT { runLoggingT :: StateT LoggingState m a }
+  deriving (Functor, Applicative, Monad, MonadState LoggingState, MonadFix
+    , MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadError e
+    , MonadSample t, MonadHold t)
 
-instance MonadBase IO m => MonadBase IO (LoggingT s m) where
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (LoggingT m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+
+instance MonadAppHost t m => MonadAppHost t (LoggingT m) where
+  getFireAsync = lift getFireAsync
+  getRunAppHost = do
+    runner <- LoggingT getRunAppHost
+    return $ \m -> runner $ runLoggingT m
+  performPostBuild_ = lift . performPostBuild_
+  liftHostFrame = lift . liftHostFrame
+
+instance MonadBase IO m => MonadBase IO (LoggingT m) where
   liftBase = LoggingT . liftBase
 
-instance MonadResource m => MonadResource (LoggingT s m) where
+instance MonadResource m => MonadResource (LoggingT m) where
   liftResourceT = LoggingT . liftResourceT
 
-instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where
-  type ModuleState (LoggingT s m) = LoggingState s
-  runModule (LoggingT m) s = do
-    ((a, s'), nextState) <- runModule (runStateT m s) (loggingNextState s)
-    printAllMsgs s'
-    return (a, s' {
-        loggingMsgs = S.empty
-      , loggingNextState = nextState
-      })
-    where
-      printAllMsgs ls@LoggingState{..} = do
-        mapM_ (uncurry $ consoleOutput ls) loggingMsgs
-        mapM_ (uncurry $ fileOutput ls) loggingMsgs
+instance GameModule t m => GameModule t (LoggingT m) where
+  runModule (LoggingT m) = do
+    s <- emptyLoggingState
+    (a, _) <- runModule $ runStateT m s
+    return a
 
-  newModuleState = emptyLoggingState <$> newModuleState
+    -- ((a, s'), nextState) <- runModule (runStateT m s) (loggingNextState s)
+    -- printAllMsgs s'
+    -- return (a, s' {
+    --     loggingMsgs = S.empty
+    --   , loggingNextState = nextState
+    --   })
+    -- where
+    --   printAllMsgs ls@LoggingState{..} = do
+    --     mapM_ (uncurry $ consoleOutput ls) loggingMsgs
+    --     mapM_ (uncurry $ fileOutput ls) loggingMsgs
 
-  withModule _ = withModule (Proxy :: Proxy m)
-  cleanupModule LoggingState{..} = case loggingFile of
-    Nothing -> return ()
-    Just h -> IO.hClose h
+  -- newModuleState t = emptyLoggingState <$> newModuleState t
 
--- | Output given message to logging file if allowed
-fileOutput :: MonadIO m => LoggingState s -> LoggingLevel -> Text -> m ()
-fileOutput ls ll msg = when (filterLogMessage ls ll LoggingFile) $
-  whenJust (loggingFile ls) $ \h -> liftIO $ T.hPutStrLn h msg
-
--- | Output given message to console if allowed
-consoleOutput :: MonadIO m => LoggingState s -> LoggingLevel -> Text -> m ()
-consoleOutput ls ll msg = when (filterLogMessage ls ll LoggingConsole) $
-  liftIO $ T.putStrLn msg
+  -- withModule t _ = withModule t (Proxy :: Proxy m)
+  -- cleanupModule t LoggingState{..} = do
+  --   case loggingFile of
+  --     Nothing -> return ()
+  --     Just h -> IO.hClose h
+  --   cleanupModule t loggingNextState

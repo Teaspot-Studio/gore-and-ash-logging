@@ -30,16 +30,18 @@ library
     , containers            >= 0.5.6    && < 0.6
     , deepseq               >= 1.4      && < 1.5
     , exceptions            >= 0.8.0.2  && < 0.9
+    , extra                 >= 1.4.3    && < 1.5
+    , fast-logger           >= 2.4      && < 2.5
     , gore-and-ash          >= 2.0.0.0  && < 2.1
+    , hashable              >= 1.2.4.0  && < 1.3
     , mtl                   >= 2.2      && < 2.3
+    , reflex                >= 0.5      && < 0.6
     , resourcet             >= 1.1.7.1  && < 1.2
     , text                  >= 1.2.1    && < 1.3
     , text-show             >= 2        && < 4
     , transformers          >= 0.4.2    && < 0.6
     , transformers-base     >= 0.4.4    && < 0.5
-    , hashable              >= 1.2.4.0  && < 1.3
     , unordered-containers  >= 0.2.5.1  && < 0.3
-    , extra                 >= 1.4.3    && < 1.5
 
   default-extensions:
     DataKinds
