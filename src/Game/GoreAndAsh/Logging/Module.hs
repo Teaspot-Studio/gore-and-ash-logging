@@ -69,7 +69,8 @@ instance MonadResource m => MonadResource (LoggingT m) where
   liftResourceT = LoggingT . liftResourceT
 
 instance (MonadIO (HostFrame t), GameModule t m) => GameModule t (LoggingT m) where
-  runModule (LoggingT m) = do
+  type ModuleOptions t (LoggingT m) = ModuleOptions t m
+  runModule opts (LoggingT m) = do
     s <- emptyLoggingState
-    runModule $ evalStateT m s
+    runModule opts $ evalStateT m s
   withModule t _ = withModule t (Proxy :: Proxy m)

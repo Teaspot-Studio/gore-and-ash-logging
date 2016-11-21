@@ -54,6 +54,11 @@ showl = toLogStr . show
 -- | Low level API for module
 class MonadAppHost t m => LoggingMonad t m where
   -- | Put message to the console.
+  logMsgM :: LoggingLevel -> LogStr -> m ()
+  -- | Put message and new line to the console.
+  logMsgMLn :: LoggingLevel -> LogStr -> m ()
+
+  -- | Put message to the console.
   logMsg :: LoggingLevel -> Behavior t LogStr -> m ()
   -- | Put message and new line to the console.
   logMsgLn :: LoggingLevel -> Behavior t LogStr -> m ()
@@ -71,6 +76,17 @@ class MonadAppHost t m => LoggingMonad t m where
   loggingSetFilter :: LoggingLevel -> [LoggingSink] -> m ()
 
 instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT m) where
+  logMsgM lvl msg = do
+    cntx <- get
+    fileOutput cntx lvl msg
+    consoleOutput cntx lvl msg
+
+  logMsgMLn lvl msg = do
+    cntx <- get
+    let msg' = msg <> "\n"
+    fileOutput cntx lvl msg'
+    consoleOutput cntx lvl msg'
+
   logMsg lvl msgB = do
     cntx <- get
     msg <- sample msgB
@@ -110,6 +126,8 @@ instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT m) whe
           Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') . loggingFilter $ cntx
     put $ cntx { loggingFilter = lfilter }
 
+  {-# INLINE logMsgM #-}
+  {-# INLINE logMsgMLn #-}
   {-# INLINE logMsg #-}
   {-# INLINE logMsgLn #-}
   {-# INLINE logMsgE #-}
@@ -118,12 +136,17 @@ instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT m) whe
   {-# INLINE loggingSetFilter #-}
 
 instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTrans mt) => LoggingMonad t (mt m) where
+  logMsgM lvl msg = lift $ logMsgM lvl msg
+  logMsgMLn lvl msg = lift $ logMsgMLn lvl msg
   logMsg lvl msgB = lift $ logMsg lvl msgB
   logMsgLn lvl msgB = lift $ logMsgLn lvl msgB
   logMsgE lvl msgB = lift $ logMsgE lvl msgB
   logMsgLnE lvl msgB = lift $ logMsgLnE lvl msgB
   loggingSetFile = lift . loggingSetFile
   loggingSetFilter a b = lift $ loggingSetFilter a b
+
+  {-# INLINE logMsgM #-}
+  {-# INLINE logMsgMLn #-}
   {-# INLINE logMsg #-}
   {-# INLINE logMsgLn #-}
   {-# INLINE logMsgE #-}
