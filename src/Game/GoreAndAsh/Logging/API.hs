@@ -13,6 +13,7 @@ module Game.GoreAndAsh.Logging.API(
     LoggingMonad(..)
   , LogStr
   , toLogStr
+  , showl
   -- * Reactive API
   , logDyn
   , logDynLn
@@ -45,6 +46,10 @@ import qualified Data.HashSet as HS
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
 import Game.GoreAndAsh.Logging.Module
+
+-- | Shortcut for `toLogStr . show`
+showl :: Show a => a -> LogStr
+showl = toLogStr . show
 
 -- | Low level API for module
 class MonadAppHost t m => LoggingMonad t m where
