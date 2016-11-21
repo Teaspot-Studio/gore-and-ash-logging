@@ -18,16 +18,9 @@ module Game.GoreAndAsh.Logging.Module(
 import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.Error.Class
---import Control.Monad.Extra (whenJust)
 import Control.Monad.Fix
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Resource
---import Data.Proxy
---import Data.Text (Text)
-
---import qualified Data.Sequence as S
---import qualified Data.Text.IO as T
---import qualified System.IO as IO
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
