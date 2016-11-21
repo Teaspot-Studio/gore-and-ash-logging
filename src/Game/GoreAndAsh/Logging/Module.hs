@@ -21,6 +21,7 @@ import Control.Monad.Error.Class
 import Control.Monad.Fix
 import Control.Monad.State.Strict
 import Control.Monad.Trans.Resource
+import Data.Proxy
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
@@ -67,28 +68,8 @@ instance MonadBase IO m => MonadBase IO (LoggingT m) where
 instance MonadResource m => MonadResource (LoggingT m) where
   liftResourceT = LoggingT . liftResourceT
 
-instance GameModule t m => GameModule t (LoggingT m) where
+instance (MonadIO (HostFrame t), GameModule t m) => GameModule t (LoggingT m) where
   runModule (LoggingT m) = do
     s <- emptyLoggingState
-    (a, _) <- runModule $ runStateT m s
-    return a
-
-    -- ((a, s'), nextState) <- runModule (runStateT m s) (loggingNextState s)
-    -- printAllMsgs s'
-    -- return (a, s' {
-    --     loggingMsgs = S.empty
-    --   , loggingNextState = nextState
-    --   })
-    -- where
-    --   printAllMsgs ls@LoggingState{..} = do
-    --     mapM_ (uncurry $ consoleOutput ls) loggingMsgs
-    --     mapM_ (uncurry $ fileOutput ls) loggingMsgs
-
-  -- newModuleState t = emptyLoggingState <$> newModuleState t
-
-  -- withModule t _ = withModule t (Proxy :: Proxy m)
-  -- cleanupModule t LoggingState{..} = do
-  --   case loggingFile of
-  --     Nothing -> return ()
-  --     Just h -> IO.hClose h
-  --   cleanupModule t loggingNextState
+    runModule $ evalStateT m s
+  withModule t _ = withModule t (Proxy :: Proxy m)
