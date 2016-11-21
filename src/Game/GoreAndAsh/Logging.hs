@@ -55,6 +55,7 @@ module Game.GoreAndAsh.Logging(
   , LoggingMonad(..)
   , LogStr
   , toLogStr
+  , showl
   -- * Reactive API
   , logDyn
   , logDynLn
