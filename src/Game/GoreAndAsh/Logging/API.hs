@@ -52,11 +52,11 @@ showl :: Show a => a -> LogStr
 showl = toLogStr . show
 
 -- | Low level API for module
-class MonadAppHost t m => LoggingMonad t m where
+class MonadAppHost t m => LoggingMonad t m | m -> t where
   -- | Put message to the console.
   logMsgM :: LoggingLevel -> LogStr -> m ()
   -- | Put message and new line to the console.
-  logMsgMLn :: LoggingLevel -> LogStr -> m ()
+  logMsgLnM :: LoggingLevel -> LogStr -> m ()
 
   -- | Put message to the console.
   logMsg :: LoggingLevel -> Behavior t LogStr -> m ()
@@ -75,13 +75,13 @@ class MonadAppHost t m => LoggingMonad t m where
   -- By default all messages are passed into file and console.
   loggingSetFilter :: LoggingLevel -> [LoggingSink] -> m ()
 
-instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT m) where
+instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT t m) where
   logMsgM lvl msg = do
     cntx <- get
     fileOutput cntx lvl msg
     consoleOutput cntx lvl msg
 
-  logMsgMLn lvl msg = do
+  logMsgLnM lvl msg = do
     cntx <- get
     let msg' = msg <> "\n"
     fileOutput cntx lvl msg'
@@ -127,7 +127,7 @@ instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT m) whe
     put $ cntx { loggingFilter = lfilter }
 
   {-# INLINE logMsgM #-}
-  {-# INLINE logMsgMLn #-}
+  {-# INLINE logMsgLnM #-}
   {-# INLINE logMsg #-}
   {-# INLINE logMsgLn #-}
   {-# INLINE logMsgE #-}
@@ -137,7 +137,7 @@ instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT m) whe
 
 instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTrans mt) => LoggingMonad t (mt m) where
   logMsgM lvl msg = lift $ logMsgM lvl msg
-  logMsgMLn lvl msg = lift $ logMsgMLn lvl msg
+  logMsgLnM lvl msg = lift $ logMsgLnM lvl msg
   logMsg lvl msgB = lift $ logMsg lvl msgB
   logMsgLn lvl msgB = lift $ logMsgLn lvl msgB
   logMsgE lvl msgB = lift $ logMsgE lvl msgB
@@ -146,7 +146,7 @@ instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTra
   loggingSetFilter a b = lift $ loggingSetFilter a b
 
   {-# INLINE logMsgM #-}
-  {-# INLINE logMsgMLn #-}
+  {-# INLINE logMsgLnM #-}
   {-# INLINE logMsg #-}
   {-# INLINE logMsgLn #-}
   {-# INLINE logMsgE #-}
