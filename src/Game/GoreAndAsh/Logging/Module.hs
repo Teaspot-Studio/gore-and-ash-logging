@@ -54,6 +54,9 @@ instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (LoggingT m)
   newEventWithTrigger = lift . newEventWithTrigger
   newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
 
+instance MonadSubscribeEvent t m => MonadSubscribeEvent t (LoggingT m) where
+  subscribeEvent = lift . subscribeEvent
+
 instance MonadAppHost t m => MonadAppHost t (LoggingT m) where
   getFireAsync = lift getFireAsync
   getRunAppHost = do
