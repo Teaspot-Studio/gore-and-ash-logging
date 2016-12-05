@@ -17,12 +17,20 @@ module Game.GoreAndAsh.Logging.Module(
 
 import Control.Monad.Base
 import Control.Monad.Catch
+import Control.Monad.Extra (whenJust, whenM)
 import Control.Monad.Fix
 import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Control.Monad.Trans.Resource
+import Data.Monoid
 import Data.Proxy
+import System.Log.FastLogger
+
+import qualified Data.HashMap.Strict as H
+import qualified Data.HashSet as HS
 
 import Game.GoreAndAsh
+import Game.GoreAndAsh.Logging.API
 import Game.GoreAndAsh.Logging.State
 
 -- | Monad transformer of logging core module.
@@ -65,8 +73,18 @@ instance MonadAppHost t m => MonadAppHost t (LoggingT t m) where
   performPostBuild_ = lift . performPostBuild_
   liftHostFrame = lift . liftHostFrame
 
-instance MonadBase IO m => MonadBase IO (LoggingT t m) where
+instance MonadTransControl (LoggingT t) where
+  type StT (LoggingT t) a = StT (ReaderT (LoggingEnv t)) a
+  liftWith = defaultLiftWith LoggingT runLoggingT
+  restoreT = defaultRestoreT LoggingT
+
+instance MonadBase b m => MonadBase b (LoggingT t m) where
   liftBase = LoggingT . liftBase
+
+instance (MonadBaseControl b m) => MonadBaseControl b (LoggingT t m) where
+  type StM (LoggingT t m) a = ComposeSt (LoggingT t) m a
+  liftBaseWith     = defaultLiftBaseWith
+  restoreM         = defaultRestoreM
 
 instance MonadResource m => MonadResource (LoggingT t m) where
   liftResourceT = LoggingT . liftResourceT
@@ -77,3 +95,90 @@ instance (MonadIO (HostFrame t), GameModule t m) => GameModule t (LoggingT t m) 
     s <- emptyLoggingEnv
     runModule opts $ runReaderT m s
   withModule t _ = withModule t (Proxy :: Proxy m)
+
+instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT t m) where
+  logMsgM lvl msg = do
+    cntx <- ask
+    fileOutput cntx lvl msg
+    consoleOutput cntx lvl msg
+
+  logMsgLnM lvl msg = do
+    cntx <- ask
+    let msg' = msg <> "\n"
+    fileOutput cntx lvl msg'
+    consoleOutput cntx lvl msg'
+
+  logMsg lvl msgB = do
+    cntx <- ask
+    msg <- sample msgB
+    fileOutput cntx lvl msg
+    consoleOutput cntx lvl msg
+
+  logMsgLn lvl msgB = do
+    cntx <- ask
+    msg <- sample msgB
+    let msg' = msg <> "\n"
+    fileOutput cntx lvl msg'
+    consoleOutput cntx lvl msg'
+
+  logMsgE lvl msgE = do
+    cntx <- ask
+    performEvent_ $ ffor msgE $ \msg -> do
+      fileOutput cntx lvl msg
+      consoleOutput cntx lvl msg
+
+  logMsgLnE lvl msgE = do
+    cntx <- ask
+    performEvent_ $ ffor msgE $ \msg -> do
+      let msg' = msg <> "\n"
+      fileOutput cntx lvl msg'
+      consoleOutput cntx lvl msg'
+
+  loggingSetFile nm = do
+    cntx <- ask
+    let ref = loggingFileSink cntx
+    sink <- readExternalRef ref
+    whenJust sink $ liftIO . rmLoggerSet
+    logger <- liftIO $ newFileLoggerSet defaultBufSize nm
+    writeExternalRef ref (Just logger)
+
+  loggingSetFilter l ss = do
+    cntx <- ask
+    modifyExternalRef (loggingFilter cntx) $ \lf -> let
+      lfilter = case l `H.lookup` lf of
+        Nothing -> H.insert l (HS.fromList ss) lf
+        Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') lf
+      in (lfilter, ())
+
+  -- | Enable/disable debugging mode
+  loggingSetDebugFlag v = do
+    cntx <- ask
+    writeExternalRef (loggingDebug cntx) v
+
+  -- | Return current value of debugging flag
+  loggingDebugFlag = do
+    cntx <- ask
+    externalRefDynamic (loggingDebug cntx)
+
+  {-# INLINE logMsgM #-}
+  {-# INLINE logMsgLnM #-}
+  {-# INLINE logMsg #-}
+  {-# INLINE logMsgLn #-}
+  {-# INLINE logMsgE #-}
+  {-# INLINE logMsgLnE #-}
+  {-# INLINE loggingSetFile #-}
+  {-# INLINE loggingSetFilter #-}
+  {-# INLINE loggingSetDebugFlag #-}
+  {-# INLINE loggingDebugFlag #-}
+
+-- | Output given message to logging file if allowed
+fileOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
+fileOutput ls ll msg = do
+  sink <- readExternalRef (loggingFileSink ls)
+  whenM (filterLogMessage ls ll LoggingFile) $
+    whenJust sink $ \l -> liftIO $ pushLogStr l msg
+
+-- | Output given message to console if allowed
+consoleOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
+consoleOutput ls ll msg = whenM (filterLogMessage ls ll LoggingConsole) $
+  liftIO $ pushLogStr (loggingConsoleSink ls) msg

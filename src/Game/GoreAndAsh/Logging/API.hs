@@ -35,23 +35,18 @@ module Game.GoreAndAsh.Logging.API(
   , logErrorE
   ) where
 
-import Control.Monad.Extra (whenJust, whenM)
 import Control.Monad.Reader
 import Data.Monoid
 import System.Log.FastLogger
 
-import qualified Data.HashMap.Strict as H
-import qualified Data.HashSet as HS
-
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
-import Game.GoreAndAsh.Logging.Module
 
 -- | Shortcut for `toLogStr . show`
 showl :: Show a => a -> LogStr
 showl = toLogStr . show
 
--- | Low level API for module
+-- | High-level API for module (intended to be used in components)
 class MonadAppHost t m => LoggingMonad t m | m -> t where
   -- | Put message to the console.
   logMsgM :: LoggingLevel -> LogStr -> m ()
@@ -82,81 +77,6 @@ class MonadAppHost t m => LoggingMonad t m | m -> t where
   -- | Return current value of debugging flag
   loggingDebugFlag :: m (Dynamic t Bool)
 
-instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT t m) where
-  logMsgM lvl msg = do
-    cntx <- ask
-    fileOutput cntx lvl msg
-    consoleOutput cntx lvl msg
-
-  logMsgLnM lvl msg = do
-    cntx <- ask
-    let msg' = msg <> "\n"
-    fileOutput cntx lvl msg'
-    consoleOutput cntx lvl msg'
-
-  logMsg lvl msgB = do
-    cntx <- ask
-    msg <- sample msgB
-    fileOutput cntx lvl msg
-    consoleOutput cntx lvl msg
-
-  logMsgLn lvl msgB = do
-    cntx <- ask
-    msg <- sample msgB
-    let msg' = msg <> "\n"
-    fileOutput cntx lvl msg'
-    consoleOutput cntx lvl msg'
-
-  logMsgE lvl msgE = do
-    cntx <- ask
-    performEvent_ $ ffor msgE $ \msg -> do
-      fileOutput cntx lvl msg
-      consoleOutput cntx lvl msg
-
-  logMsgLnE lvl msgE = do
-    cntx <- ask
-    performEvent_ $ ffor msgE $ \msg -> do
-      let msg' = msg <> "\n"
-      fileOutput cntx lvl msg'
-      consoleOutput cntx lvl msg'
-
-  loggingSetFile nm = do
-    cntx <- ask
-    let ref = loggingFileSink cntx
-    sink <- readExternalRef ref
-    whenJust sink $ liftIO . rmLoggerSet
-    logger <- liftIO $ newFileLoggerSet defaultBufSize nm
-    writeExternalRef ref (Just logger)
-
-  loggingSetFilter l ss = do
-    cntx <- ask
-    modifyExternalRef (loggingFilter cntx) $ \lf -> let
-      lfilter = case l `H.lookup` lf of
-        Nothing -> H.insert l (HS.fromList ss) lf
-        Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') lf
-      in (lfilter, ())
-
-  -- | Enable/disable debugging mode
-  loggingSetDebugFlag v = do
-    cntx <- ask
-    writeExternalRef (loggingDebug cntx) v
-
-  -- | Return current value of debugging flag
-  loggingDebugFlag = do
-    cntx <- ask
-    externalRefDynamic (loggingDebug cntx)
-
-  {-# INLINE logMsgM #-}
-  {-# INLINE logMsgLnM #-}
-  {-# INLINE logMsg #-}
-  {-# INLINE logMsgLn #-}
-  {-# INLINE logMsgE #-}
-  {-# INLINE logMsgLnE #-}
-  {-# INLINE loggingSetFile #-}
-  {-# INLINE loggingSetFilter #-}
-  {-# INLINE loggingSetDebugFlag #-}
-  {-# INLINE loggingDebugFlag #-}
-
 instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTrans mt) => LoggingMonad t (mt m) where
   logMsgM lvl msg = lift $ logMsgM lvl msg
   logMsgLnM lvl msg = lift $ logMsgLnM lvl msg
@@ -179,19 +99,6 @@ instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTra
   {-# INLINE loggingSetFilter #-}
   {-# INLINE loggingSetDebugFlag #-}
   {-# INLINE loggingDebugFlag #-}
-
-
--- | Output given message to logging file if allowed
-fileOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
-fileOutput ls ll msg = do
-  sink <- readExternalRef (loggingFileSink ls)
-  whenM (filterLogMessage ls ll LoggingFile) $
-    whenJust sink $ \l -> liftIO $ pushLogStr l msg
-
--- | Output given message to console if allowed
-consoleOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
-consoleOutput ls ll msg = whenM (filterLogMessage ls ll LoggingConsole) $
-  liftIO $ pushLogStr (loggingConsoleSink ls) msg
 
 -- | Put message to console on every frame without newline
 logDyn :: LoggingMonad t m => LoggingLevel -> Dynamic t LogStr -> m ()
