@@ -17,9 +17,8 @@ module Game.GoreAndAsh.Logging.Module(
 
 import Control.Monad.Base
 import Control.Monad.Catch
-import Control.Monad.Error.Class
 import Control.Monad.Fix
-import Control.Monad.State.Strict
+import Control.Monad.Reader
 import Control.Monad.Trans.Resource
 import Data.Proxy
 
@@ -44,10 +43,12 @@ import Game.GoreAndAsh.Logging.State
 -- @
 --
 -- See `examples/Example01.hs` for a full example.
-newtype LoggingT t m a = LoggingT { runLoggingT :: StateT LoggingState m a }
-  deriving (Functor, Applicative, Monad, MonadState LoggingState, MonadFix
-    , MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadError e
-    , MonadSample t, MonadHold t)
+newtype LoggingT t m a = LoggingT { runLoggingT :: ReaderT (LoggingEnv t) m a }
+  deriving (Functor, Applicative, Monad, MonadReader (LoggingEnv t), MonadFix
+    , MonadIO, MonadThrow, MonadCatch, MonadMask, MonadSample t, MonadHold t)
+
+instance MonadTrans (LoggingT t) where
+  lift = LoggingT . lift
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (LoggingT t m) where
   newEventWithTrigger = lift . newEventWithTrigger
@@ -73,6 +74,6 @@ instance MonadResource m => MonadResource (LoggingT t m) where
 instance (MonadIO (HostFrame t), GameModule t m) => GameModule t (LoggingT t m) where
   type ModuleOptions t (LoggingT t m) = ModuleOptions t m
   runModule opts (LoggingT m) = do
-    s <- emptyLoggingState
-    runModule opts $ evalStateT m s
+    s <- emptyLoggingEnv
+    runModule opts $ runReaderT m s
   withModule t _ = withModule t (Proxy :: Proxy m)

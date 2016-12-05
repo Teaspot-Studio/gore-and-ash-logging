@@ -35,8 +35,8 @@ module Game.GoreAndAsh.Logging.API(
   , logErrorE
   ) where
 
-import Control.Monad.Extra (whenJust)
-import Control.Monad.State.Strict
+import Control.Monad.Extra (whenJust, whenM)
+import Control.Monad.Reader
 import Data.Monoid
 import System.Log.FastLogger
 
@@ -70,61 +70,81 @@ class MonadAppHost t m => LoggingMonad t m | m -> t where
 
   -- | Setting current logging file handler
   loggingSetFile :: FilePath -> m ()
+
   -- | Setting allowed sinks for given logging level.
   --
   -- By default all messages are passed into file and console.
   loggingSetFilter :: LoggingLevel -> [LoggingSink] -> m ()
 
+  -- | Enable/disable debugging mode
+  loggingSetDebugFlag :: Bool -> m ()
+
+  -- | Return current value of debugging flag
+  loggingDebugFlag :: m (Dynamic t Bool)
+
 instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT t m) where
   logMsgM lvl msg = do
-    cntx <- get
+    cntx <- ask
     fileOutput cntx lvl msg
     consoleOutput cntx lvl msg
 
   logMsgLnM lvl msg = do
-    cntx <- get
+    cntx <- ask
     let msg' = msg <> "\n"
     fileOutput cntx lvl msg'
     consoleOutput cntx lvl msg'
 
   logMsg lvl msgB = do
-    cntx <- get
+    cntx <- ask
     msg <- sample msgB
     fileOutput cntx lvl msg
     consoleOutput cntx lvl msg
 
   logMsgLn lvl msgB = do
-    cntx <- get
+    cntx <- ask
     msg <- sample msgB
     let msg' = msg <> "\n"
     fileOutput cntx lvl msg'
     consoleOutput cntx lvl msg'
 
   logMsgE lvl msgE = do
-    cntx <- get
+    cntx <- ask
     performEvent_ $ ffor msgE $ \msg -> do
       fileOutput cntx lvl msg
       consoleOutput cntx lvl msg
 
   logMsgLnE lvl msgE = do
-    cntx <- get
+    cntx <- ask
     performEvent_ $ ffor msgE $ \msg -> do
       let msg' = msg <> "\n"
       fileOutput cntx lvl msg'
       consoleOutput cntx lvl msg'
 
   loggingSetFile nm = do
-    cntx <- get
-    whenJust (loggingFileSink cntx) $ liftIO . rmLoggerSet
+    cntx <- ask
+    let ref = loggingFileSink cntx
+    sink <- readExternalRef ref
+    whenJust sink $ liftIO . rmLoggerSet
     logger <- liftIO $ newFileLoggerSet defaultBufSize nm
-    put $ cntx { loggingFileSink = Just logger }
+    writeExternalRef ref (Just logger)
 
   loggingSetFilter l ss = do
-    cntx <- get
-    let lfilter = case l `H.lookup` loggingFilter cntx of
-          Nothing -> H.insert l (HS.fromList ss) . loggingFilter $ cntx
-          Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') . loggingFilter $ cntx
-    put $ cntx { loggingFilter = lfilter }
+    cntx <- ask
+    modifyExternalRef (loggingFilter cntx) $ \lf -> let
+      lfilter = case l `H.lookup` lf of
+        Nothing -> H.insert l (HS.fromList ss) lf
+        Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') lf
+      in (lfilter, ())
+
+  -- | Enable/disable debugging mode
+  loggingSetDebugFlag v = do
+    cntx <- ask
+    writeExternalRef (loggingDebug cntx) v
+
+  -- | Return current value of debugging flag
+  loggingDebugFlag = do
+    cntx <- ask
+    externalRefDynamic (loggingDebug cntx)
 
   {-# INLINE logMsgM #-}
   {-# INLINE logMsgLnM #-}
@@ -134,6 +154,8 @@ instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT t m) w
   {-# INLINE logMsgLnE #-}
   {-# INLINE loggingSetFile #-}
   {-# INLINE loggingSetFilter #-}
+  {-# INLINE loggingSetDebugFlag #-}
+  {-# INLINE loggingDebugFlag #-}
 
 instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTrans mt) => LoggingMonad t (mt m) where
   logMsgM lvl msg = lift $ logMsgM lvl msg
@@ -144,6 +166,8 @@ instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTra
   logMsgLnE lvl msgB = lift $ logMsgLnE lvl msgB
   loggingSetFile = lift . loggingSetFile
   loggingSetFilter a b = lift $ loggingSetFilter a b
+  loggingSetDebugFlag = lift . loggingSetDebugFlag
+  loggingDebugFlag = lift loggingDebugFlag
 
   {-# INLINE logMsgM #-}
   {-# INLINE logMsgLnM #-}
@@ -153,15 +177,20 @@ instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTra
   {-# INLINE logMsgLnE #-}
   {-# INLINE loggingSetFile #-}
   {-# INLINE loggingSetFilter #-}
+  {-# INLINE loggingSetDebugFlag #-}
+  {-# INLINE loggingDebugFlag #-}
+
 
 -- | Output given message to logging file if allowed
-fileOutput :: MonadIO m => LoggingState -> LoggingLevel -> LogStr -> m ()
-fileOutput ls ll msg = when (filterLogMessage ls ll LoggingFile) $
-  whenJust (loggingFileSink ls) $ \l -> liftIO $ pushLogStr l msg
+fileOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
+fileOutput ls ll msg = do
+  sink <- readExternalRef (loggingFileSink ls)
+  whenM (filterLogMessage ls ll LoggingFile) $
+    whenJust sink $ \l -> liftIO $ pushLogStr l msg
 
 -- | Output given message to console if allowed
-consoleOutput :: MonadIO m => LoggingState -> LoggingLevel -> LogStr -> m ()
-consoleOutput ls ll msg = when (filterLogMessage ls ll LoggingConsole) $
+consoleOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
+consoleOutput ls ll msg = whenM (filterLogMessage ls ll LoggingConsole) $
   liftIO $ pushLogStr (loggingConsoleSink ls) msg
 
 -- | Put message to console on every frame without newline
