@@ -37,6 +37,11 @@ module Game.GoreAndAsh.Logging.API(
   , logEither
   , logEitherWarn
   , logEitherError
+  -- ** Verbose logging
+  , logVerboseM
+  , logVerbose
+  , logVerboseDyn
+  , logVerboseE
   ) where
 
 import Control.Monad.Reader
@@ -178,3 +183,29 @@ logEitherWarn = logEither LogWarn . fmap (first ("Warn: " <>))
 -- | Pass through events with possible failures and log them as errors
 logEitherError :: LoggingMonad t m => Event t (Either LogStr a) -> m (Event t a)
 logEitherError = logEither LogError . fmap (first ("Error: " <>))
+
+-- | Log only when detailed logging is switched on (once)
+logVerboseM :: LoggingMonad t m => LogStr -> m ()
+logVerboseM msg = do
+  flag <- sample . current =<< loggingDebugFlag
+  when flag $ logMsgLnM LogDebug ("Verbose: " <> msg)
+
+-- | Log only when detailed logging is switched on (each frame)
+logVerbose :: LoggingMonad t m => Behavior t LogStr -> m ()
+logVerbose msg = do
+  dynFlag <- loggingDebugFlag
+  void $ dynAppHost $ ffor dynFlag $ \flag -> if flag
+    then logMsgLn LogDebug $ fmap ("Verbose: " <>) msg
+    else return ()
+
+-- | Log only when detailed logging is switched on (each frame)
+logVerboseDyn :: LoggingMonad t m => Dynamic t LogStr -> m ()
+logVerboseDyn = logVerbose . current
+
+-- | Log only when detailed logging is switched on (each fire of event)
+logVerboseE :: LoggingMonad t m => Event t LogStr -> m ()
+logVerboseE msg = do
+  dynFlag <- loggingDebugFlag
+  void $ dynAppHost $ ffor dynFlag $ \flag -> if flag
+    then logMsgLnE LogDebug $ fmap ("Verbose: " <>) msg
+    else return ()
