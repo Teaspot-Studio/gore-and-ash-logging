@@ -56,6 +56,9 @@ module Game.GoreAndAsh.Logging(
   , logInfoE
   , logWarnE
   , logErrorE
+  , logEither
+  , logEitherWarn
+  , logEitherError
   ) where
 
 import Game.GoreAndAsh.Logging.API

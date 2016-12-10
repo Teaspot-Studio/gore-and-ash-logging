@@ -9,6 +9,7 @@ Portability : POSIX
 
 Module that contains monadic and arrow API of logging module.
 -}
+{-# LANGUAGE LambdaCase #-}
 module Game.GoreAndAsh.Logging.API(
     LoggingMonad(..)
   , LogStr
@@ -33,9 +34,13 @@ module Game.GoreAndAsh.Logging.API(
   , logInfoE
   , logWarnE
   , logErrorE
+  , logEither
+  , logEitherWarn
+  , logEitherError
   ) where
 
 import Control.Monad.Reader
+import Data.Bifunctor
 import Data.Monoid
 import System.Log.FastLogger
 
@@ -155,3 +160,21 @@ logWarnE = logMsgLnE LogWarn . fmap ("Warn: " <>)
 -- | Put error msg to console on event
 logErrorE :: LoggingMonad t m => Event t LogStr -> m ()
 logErrorE = logMsgLnE LogError . fmap ("Error: " <>)
+
+-- | Pass through events with possible failures and log them
+logEither :: (LoggingMonad t m) => LoggingLevel -> Event t (Either LogStr a) -> m (Event t a)
+logEither lvl e = do
+  logMsgLnE lvl $ fforMaybe e $ \case
+    Left msg -> Just msg
+    _ -> Nothing
+  return $ fforMaybe e $ \case
+    Right a -> Just a
+    _ -> Nothing
+
+-- | Pass through events with possible failures and log them as warnings
+logEitherWarn :: LoggingMonad t m => Event t (Either LogStr a) -> m (Event t a)
+logEitherWarn = logEither LogWarn . fmap (first ("Warn: " <>))
+
+-- | Pass through events with possible failures and log them as errors
+logEitherError :: LoggingMonad t m => Event t (Either LogStr a) -> m (Event t a)
+logEitherError = logEither LogError . fmap (first ("Error: " <>))
