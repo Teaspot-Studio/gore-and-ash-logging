@@ -20,6 +20,8 @@ import Control.Monad.Base
 import Control.Monad.Catch
 import Control.Monad.Fix
 import Control.Monad.Reader
+import Control.Monad.Trans.Control
+import Control.Monad.Trans.Identity
 import Control.Monad.Trans.Resource
 import Data.Proxy
 import System.IO
@@ -47,12 +49,12 @@ import Game.GoreAndAsh.Console.API
 -- @
 --
 -- See `examples/Example02.hs` for a full example.
-newtype ConsoleT t m a = ConsoleT { runConsoleT :: m a }
+newtype ConsoleT t m a = ConsoleT { runConsoleT :: IdentityT m a }
   deriving (Functor, Applicative, Monad, MonadFix
     , MonadIO, MonadThrow, MonadCatch, MonadMask, MonadSample t, MonadHold t)
 
 instance MonadTrans (ConsoleT t) where
-  lift = ConsoleT
+  lift = ConsoleT . lift
 
 instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (ConsoleT t m) where
   newEventWithTrigger = lift . newEventWithTrigger
@@ -65,19 +67,29 @@ instance MonadAppHost t m => MonadAppHost t (ConsoleT t m) where
   getFireAsync = lift getFireAsync
   getRunAppHost = do
     runner <- ConsoleT getRunAppHost
-    return $ \m -> runner $ runConsoleT m
+    return $ \m -> runner . runConsoleT $ m
   performPostBuild_ = lift . performPostBuild_
   liftHostFrame = lift . liftHostFrame
 
-instance MonadBase IO m => MonadBase IO (ConsoleT t m) where
+instance MonadTransControl (ConsoleT t) where
+  type StT (ConsoleT t) a = StT IdentityT a
+  liftWith = defaultLiftWith ConsoleT runConsoleT
+  restoreT = defaultRestoreT ConsoleT
+
+instance MonadBase b m => MonadBase b (ConsoleT t m) where
   liftBase = ConsoleT . liftBase
+
+instance (MonadBaseControl b m) => MonadBaseControl b (ConsoleT t m) where
+  type StM (ConsoleT t m) a = ComposeSt (ConsoleT t) m a
+  liftBaseWith     = defaultLiftBaseWith
+  restoreM         = defaultRestoreM
 
 instance MonadResource m => MonadResource (ConsoleT t m) where
   liftResourceT = ConsoleT . liftResourceT
 
 instance GameModule t m => GameModule t (ConsoleT t m) where
   type ModuleOptions t (ConsoleT t m) = ModuleOptions t m
-  runModule opts (ConsoleT m) = runModule opts m
+  runModule opts (ConsoleT m) = runModule opts $ runIdentityT m
   withModule t _ = withModule t (Proxy :: Proxy m)
 
 instance {-# OVERLAPPING #-} MonadAppHost t m => ConsoleMonad t (ConsoleT t m) where
