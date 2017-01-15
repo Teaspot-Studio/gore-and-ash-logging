@@ -7,14 +7,14 @@ resolver: lts-7.15
 packages:
 - '.'
 - location:
-    git: git@github.com:reflex-frp/reflex.git
+    git: https://github.com/reflex-frp/reflex.git
     commit: 91299fce0bb2caddfba35af6608df57dd31e3690
 - location:
-    git: git@github.com:bennofs/reflex-host.git
+    git: https://github.com/bennofs/reflex-host.git
     commit: ef269102ef5c61f15072ed79370e791820e25d8d
 - location:
-    git: git@github.com:teaspot-studio/gore-and-ash.git
-    commit: 316eb0cbe90dd6b733e53f16ab1a55ae022473af
+    git: https://github.com/teaspot-studio/gore-and-ash.git
+    commit: 5b0668c62f097f665bdcc2963b5cc6b1d165fb9b
 
 # Packages to be pulled from upstream that are not in the resolver (e.g., acme-missiles-0.3)
 extra-deps:
