@@ -10,22 +10,23 @@ Portability : POSIX
 Contains description of state for logging core module.
 -}
 module Game.GoreAndAsh.Logging.State(
-    LoggingState(..)
+    LoggingEnv(..)
   , LoggingLevel(..)
   , LoggingSink(..)
-  , emptyLoggingState
+  , emptyLoggingEnv
   , filterLogMessage
   ) where
 
 import Control.DeepSeq
 import Data.Hashable
-import Data.Text
 import GHC.Generics (Generic)
+import System.Log.FastLogger
+import Control.Monad.IO.Class
+
+import Game.GoreAndAsh.Core
+
 import qualified Data.HashMap.Strict as H
 import qualified Data.HashSet as HS
-import qualified Data.Sequence as S
-import System.IO
-
 
 -- | Distanation of logging
 data LoggingSink =
@@ -59,35 +60,39 @@ type LoggingFilter = H.HashMap LoggingLevel (HS.HashSet LoggingSink)
 
 -- | Inner state of logger.
 --
--- [@s@] next state, states of modules are chained via nesting
-data LoggingState s = LoggingState {
-  loggingMsgs :: !(S.Seq (LoggingLevel, Text))
-, loggingNextState :: !s
-, loggingFile :: !(Maybe Handle)
-, loggingFilter :: !(LoggingFilter)
-, loggignDebug :: !Bool
+-- [@t@] FRP engine implementation, can be ignored almost everywhere.
+data LoggingEnv t = LoggingEnv {
+  loggingFileSink    :: !(ExternalRef t (Maybe LoggerSet))
+, loggingConsoleSink :: !LoggerSet
+, loggingFilter      :: !(ExternalRef t LoggingFilter)
+, loggingDebug       :: !(ExternalRef t Bool)
 } deriving (Generic)
 
-instance NFData s => NFData (LoggingState s) where
-  rnf LoggingState{..} =
-     loggingMsgs `deepseq`
-     loggingNextState `deepseq`
-     loggingFile `seq`
-     loggingFilter `deepseq`
-     loggignDebug `seq` ()
+instance NFData (LoggingEnv t) where
+  rnf LoggingEnv{..} =
+     loggingFileSink `seq`
+     loggingConsoleSink `seq`
+     loggingFilter `seq`
+     loggingDebug `seq` ()
 
 -- | Create empty module state
-emptyLoggingState :: s -> LoggingState s
-emptyLoggingState s = LoggingState {
-    loggingMsgs = S.empty
-  , loggingNextState = s
-  , loggingFile = Nothing
-  , loggingFilter = H.empty
-  , loggignDebug = False
-  }
+emptyLoggingEnv :: MonadAppHost t m => m (LoggingEnv t)
+emptyLoggingEnv = do
+  fileSink <- newExternalRef Nothing
+  lfilter <- newExternalRef mempty
+  debugFlag <- newExternalRef False
+  consoleSink <- liftIO $ newStdoutLoggerSet defaultBufSize
+  return LoggingEnv {
+      loggingFileSink = fileSink
+    , loggingConsoleSink = consoleSink
+    , loggingFilter = lfilter
+    , loggingDebug = debugFlag
+    }
 
 -- | Returns 'True' if given message level is allowed to go in the sink
-filterLogMessage :: LoggingState s -> LoggingLevel -> LoggingSink -> Bool
-filterLogMessage LoggingState{..} ll ls = case H.lookup ll loggingFilter of
-  Nothing -> True
-  Just ss -> HS.member ls ss
+filterLogMessage :: MonadIO m => LoggingEnv s -> LoggingLevel -> LoggingSink -> m Bool
+filterLogMessage LoggingEnv{..} ll ls = do
+  lf <- readExternalRef loggingFilter
+  return $ case H.lookup ll lf of
+    Nothing -> True
+    Just ss -> HS.member ls ss

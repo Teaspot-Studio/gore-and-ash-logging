@@ -17,23 +17,25 @@ module Game.GoreAndAsh.Logging.Module(
 
 import Control.Monad.Base
 import Control.Monad.Catch
-import Control.Monad.Error.Class
-import Control.Monad.Extra (whenJust)
+import Control.Monad.Extra (whenJust, whenM)
 import Control.Monad.Fix
-import Control.Monad.State.Strict
+import Control.Monad.Reader
+import Control.Monad.Trans.Control
 import Control.Monad.Trans.Resource
+import Data.Monoid
 import Data.Proxy
-import Data.Text (Text)
-import qualified Data.Sequence as S
-import qualified Data.Text.IO as T
-import qualified System.IO as IO
+import System.Log.FastLogger
+
+import qualified Data.HashMap.Strict as H
+import qualified Data.HashSet as HS
 
 import Game.GoreAndAsh
+import Game.GoreAndAsh.Logging.API
 import Game.GoreAndAsh.Logging.State
 
 -- | Monad transformer of logging core module.
 --
--- [@s@] - State of next core module in modules chain;
+-- [@t@] - FRP engine implementation, safely can be ignored;
 --
 -- [@m@] - Next monad in modules monad stack;
 --
@@ -42,50 +44,141 @@ import Game.GoreAndAsh.Logging.State
 -- How to embed module:
 --
 -- @
--- type AppStack = ModuleStack [LoggingT, ... other modules ... ] IO
+-- type AppMonad t a = LoggingT t (GameMonad t)
 --
--- newtype AppMonad a = AppMonad (AppStack a)
---   deriving (Functor, Applicative, Monad, MonadFix, MonadIO, LoggingMonad)
+-- app :: LoggingMonad t m => m ()
+-- app = mapM_ (logMsgLnM LogInfo) $ fmap showl [1 .. 10 :: Int]
 -- @
 --
--- The module is pure within first phase (see 'ModuleStack' docs) and could be used
--- with 'Identity' end monad.
-newtype LoggingT s m a = LoggingT { runLoggingT :: StateT (LoggingState s) m a }
-  deriving (Functor, Applicative, Monad, MonadState (LoggingState s), MonadFix, MonadTrans, MonadIO, MonadThrow, MonadCatch, MonadMask, MonadError e)
+-- See `examples/Example01.hs` for a full example.
+newtype LoggingT t m a = LoggingT { runLoggingT :: ReaderT (LoggingEnv t) m a }
+  deriving (Functor, Applicative, Monad, MonadReader (LoggingEnv t), MonadFix
+    , MonadIO, MonadThrow, MonadCatch, MonadMask, MonadSample t, MonadHold t)
 
-instance MonadBase IO m => MonadBase IO (LoggingT s m) where
+instance MonadTrans (LoggingT t) where
+  lift = LoggingT . lift
+
+instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (LoggingT t m) where
+  newEventWithTrigger = lift . newEventWithTrigger
+  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
+
+instance MonadSubscribeEvent t m => MonadSubscribeEvent t (LoggingT t m) where
+  subscribeEvent = lift . subscribeEvent
+
+instance MonadAppHost t m => MonadAppHost t (LoggingT t m) where
+  getFireAsync = lift getFireAsync
+  getRunAppHost = do
+    runner <- LoggingT getRunAppHost
+    return $ \m -> runner $ runLoggingT m
+  performPostBuild_ = lift . performPostBuild_
+  liftHostFrame = lift . liftHostFrame
+
+instance MonadTransControl (LoggingT t) where
+  type StT (LoggingT t) a = StT (ReaderT (LoggingEnv t)) a
+  liftWith = defaultLiftWith LoggingT runLoggingT
+  restoreT = defaultRestoreT LoggingT
+
+instance MonadBase b m => MonadBase b (LoggingT t m) where
   liftBase = LoggingT . liftBase
 
-instance MonadResource m => MonadResource (LoggingT s m) where
+instance (MonadBaseControl b m) => MonadBaseControl b (LoggingT t m) where
+  type StM (LoggingT t m) a = ComposeSt (LoggingT t) m a
+  liftBaseWith     = defaultLiftBaseWith
+  restoreM         = defaultRestoreM
+
+instance MonadResource m => MonadResource (LoggingT t m) where
   liftResourceT = LoggingT . liftResourceT
 
-instance GameModule m s => GameModule (LoggingT s m) (LoggingState s) where
-  type ModuleState (LoggingT s m) = LoggingState s
-  runModule (LoggingT m) s = do
-    ((a, s'), nextState) <- runModule (runStateT m s) (loggingNextState s)
-    printAllMsgs s'
-    return (a, s' {
-        loggingMsgs = S.empty
-      , loggingNextState = nextState
-      })
-    where
-      printAllMsgs ls@LoggingState{..} = do
-        mapM_ (uncurry $ consoleOutput ls) loggingMsgs
-        mapM_ (uncurry $ fileOutput ls) loggingMsgs
+instance (MonadIO (HostFrame t), GameModule t m) => GameModule t (LoggingT t m) where
+  type ModuleOptions t (LoggingT t m) = ModuleOptions t m
+  runModule opts (LoggingT m) = do
+    s <- emptyLoggingEnv
+    runModule opts $ runReaderT m s
+  withModule t _ = withModule t (Proxy :: Proxy m)
 
-  newModuleState = emptyLoggingState <$> newModuleState
+instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT t m) where
+  logMsgM lvl msg = do
+    cntx <- ask
+    fileOutput cntx lvl msg
+    consoleOutput cntx lvl msg
 
-  withModule _ = withModule (Proxy :: Proxy m)
-  cleanupModule LoggingState{..} = case loggingFile of
-    Nothing -> return ()
-    Just h -> IO.hClose h
+  logMsgLnM lvl msg = do
+    cntx <- ask
+    let msg' = msg <> "\n"
+    fileOutput cntx lvl msg'
+    consoleOutput cntx lvl msg'
+
+  logMsg lvl msgB = do
+    cntx <- ask
+    msg <- sample msgB
+    fileOutput cntx lvl msg
+    consoleOutput cntx lvl msg
+
+  logMsgLn lvl msgB = do
+    cntx <- ask
+    msg <- sample msgB
+    let msg' = msg <> "\n"
+    fileOutput cntx lvl msg'
+    consoleOutput cntx lvl msg'
+
+  logMsgE lvl msgE = do
+    cntx <- ask
+    performEvent_ $ ffor msgE $ \msg -> do
+      fileOutput cntx lvl msg
+      consoleOutput cntx lvl msg
+
+  logMsgLnE lvl msgE = do
+    cntx <- ask
+    performEvent_ $ ffor msgE $ \msg -> do
+      let msg' = msg <> "\n"
+      fileOutput cntx lvl msg'
+      consoleOutput cntx lvl msg'
+
+  loggingSetFile nm = do
+    cntx <- ask
+    let ref = loggingFileSink cntx
+    sink <- readExternalRef ref
+    whenJust sink $ liftIO . rmLoggerSet
+    logger <- liftIO $ newFileLoggerSet defaultBufSize nm
+    writeExternalRef ref (Just logger)
+
+  loggingSetFilter l ss = do
+    cntx <- ask
+    modifyExternalRef (loggingFilter cntx) $ \lf -> let
+      lfilter = case l `H.lookup` lf of
+        Nothing -> H.insert l (HS.fromList ss) lf
+        Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') lf
+      in (lfilter, ())
+
+  -- | Enable/disable debugging mode
+  loggingSetDebugFlag v = do
+    cntx <- ask
+    writeExternalRef (loggingDebug cntx) v
+
+  -- | Return current value of debugging flag
+  loggingDebugFlag = do
+    cntx <- ask
+    externalRefDynamic (loggingDebug cntx)
+
+  {-# INLINE logMsgM #-}
+  {-# INLINE logMsgLnM #-}
+  {-# INLINE logMsg #-}
+  {-# INLINE logMsgLn #-}
+  {-# INLINE logMsgE #-}
+  {-# INLINE logMsgLnE #-}
+  {-# INLINE loggingSetFile #-}
+  {-# INLINE loggingSetFilter #-}
+  {-# INLINE loggingSetDebugFlag #-}
+  {-# INLINE loggingDebugFlag #-}
 
 -- | Output given message to logging file if allowed
-fileOutput :: MonadIO m => LoggingState s -> LoggingLevel -> Text -> m ()
-fileOutput ls ll msg = when (filterLogMessage ls ll LoggingFile) $
-  whenJust (loggingFile ls) $ \h -> liftIO $ T.hPutStrLn h msg
+fileOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
+fileOutput ls ll msg = do
+  sink <- readExternalRef (loggingFileSink ls)
+  whenM (filterLogMessage ls ll LoggingFile) $
+    whenJust sink $ \l -> liftIO $ pushLogStr l msg
 
 -- | Output given message to console if allowed
-consoleOutput :: MonadIO m => LoggingState s -> LoggingLevel -> Text -> m ()
-consoleOutput ls ll msg = when (filterLogMessage ls ll LoggingConsole) $
-  liftIO $ T.putStrLn msg
+consoleOutput :: MonadIO m => LoggingEnv t -> LoggingLevel -> LogStr -> m ()
+consoleOutput ls ll msg = whenM (filterLogMessage ls ll LoggingConsole) $
+  liftIO $ pushLogStr (loggingConsoleSink ls) msg

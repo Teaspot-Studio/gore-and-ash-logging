@@ -9,149 +9,203 @@ Portability : POSIX
 
 Module that contains monadic and arrow API of logging module.
 -}
+{-# LANGUAGE LambdaCase #-}
 module Game.GoreAndAsh.Logging.API(
     LoggingMonad(..)
-  , loggingSetFile
-  -- * Arrow API
-  , logA
-  , logALn
-  , logE
-  , logELn
-
-  -- ** Every frame
-  , logDebugA
-  , logInfoA
-  , logWarnA
-  , logErrorA
-  -- ** Event based
+  , LogStr
+  , toLogStr
+  , showl
+  -- * Reactive API
+  , logDyn
+  , logDynLn
+  -- * Shortcuts
+  -- ** Behavior
+  , logDebug
+  , logInfo
+  , logWarn
+  , logError
+  -- ** Dynamic
+  , logDebugDyn
+  , logInfoDyn
+  , logWarnDyn
+  , logErrorDyn
+  -- ** Event
   , logDebugE
   , logInfoE
   , logWarnE
   , logErrorE
-
-  -- ** Event tracing
-  , traceEvent
-  , traceEventShow
+  , logEither
+  , logEitherWarn
+  , logEitherError
+  -- ** Verbose logging
+  , logVerboseM
+  , logVerbose
+  , logVerboseDyn
+  , logVerboseE
   ) where
 
-import Control.Monad.Extra (whenJust)
-import Control.Monad.State.Strict
-import Control.Wire
-import Data.Text
-import Prelude hiding (id, (.))
-import qualified Data.HashMap.Strict as H
-import qualified Data.HashSet as HS
-import qualified Data.Sequence as S
-import System.IO as IO
-import TextShow
+import Control.Monad.Reader
+import Data.Bifunctor
+import Data.Monoid
+import System.Log.FastLogger
 
 import Game.GoreAndAsh
 import Game.GoreAndAsh.Logging.State
-import Game.GoreAndAsh.Logging.Module
 
--- | Low level API for module
-class MonadIO m => LoggingMonad m where
+-- | Shortcut for `toLogStr . show`
+showl :: Show a => a -> LogStr
+showl = toLogStr . show
+
+-- | High-level API for module (intended to be used in components)
+class MonadAppHost t m => LoggingMonad t m | m -> t where
   -- | Put message to the console.
-  putMsgM :: LoggingLevel -> Text -> m ()
+  logMsgM :: LoggingLevel -> LogStr -> m ()
   -- | Put message and new line to the console.
-  putMsgLnM :: LoggingLevel -> Text -> m ()
+  logMsgLnM :: LoggingLevel -> LogStr -> m ()
+
+  -- | Put message to the console.
+  logMsg :: LoggingLevel -> Behavior t LogStr -> m ()
+  -- | Put message and new line to the console.
+  logMsgLn :: LoggingLevel -> Behavior t LogStr -> m ()
+
+  -- | Put message to the log when the event fires
+  logMsgE :: LoggingLevel -> Event t LogStr -> m ()
+  -- | Put message and new line to log when the event fires
+  logMsgLnE :: LoggingLevel -> Event t LogStr -> m ()
+
   -- | Setting current logging file handler
-  loggingSetHandle :: IO.Handle -> m ()
+  loggingSetFile :: FilePath -> m ()
+
   -- | Setting allowed sinks for given logging level.
   --
   -- By default all messages are passed into file and console.
   loggingSetFilter :: LoggingLevel -> [LoggingSink] -> m ()
 
-instance {-# OVERLAPPING #-} MonadIO m => LoggingMonad (LoggingT s m) where
-  putMsgM l t = do
-    cntx <- get
-    let newMsgs = case S.viewr $ loggingMsgs cntx of
-          S.EmptyR -> loggingMsgs cntx S.|> (l, t)
-          (s' S.:> (l', t')) -> s' S.|> (l', t' <> t)
-    put $ cntx { loggingMsgs = newMsgs }
+  -- | Enable/disable debugging mode
+  loggingSetDebugFlag :: Bool -> m ()
 
-  putMsgLnM l t = do
-    cntx <- get
-    put $ cntx { loggingMsgs = loggingMsgs cntx S.|> (l, t) }
+  -- | Return current value of debugging flag
+  loggingDebugFlag :: m (Dynamic t Bool)
 
-  loggingSetHandle h = do
-    cntx <- get
-    whenJust (loggingFile cntx) $ liftIO . IO.hClose
-    put $ cntx { loggingFile = Just h }
-
-  loggingSetFilter l ss = do
-    cntx <- get
-    let lfilter = case l `H.lookup` loggingFilter cntx of
-          Nothing -> H.insert l (HS.fromList ss) . loggingFilter $ cntx
-          Just ss' -> H.insert l (HS.fromList ss `HS.union` ss') . loggingFilter $ cntx
-    put $ cntx { loggingFilter = lfilter }
-
-instance {-# OVERLAPPABLE #-} (MonadIO (mt m), LoggingMonad m, MonadTrans mt) => LoggingMonad (mt m) where
-  putMsgM a b = lift $ putMsgM a b
-  putMsgLnM a b = lift $ putMsgLnM a b
-  loggingSetHandle = lift . loggingSetHandle
+instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTrans mt) => LoggingMonad t (mt m) where
+  logMsgM lvl msg = lift $ logMsgM lvl msg
+  logMsgLnM lvl msg = lift $ logMsgLnM lvl msg
+  logMsg lvl msgB = lift $ logMsg lvl msgB
+  logMsgLn lvl msgB = lift $ logMsgLn lvl msgB
+  logMsgE lvl msgB = lift $ logMsgE lvl msgB
+  logMsgLnE lvl msgB = lift $ logMsgLnE lvl msgB
+  loggingSetFile = lift . loggingSetFile
   loggingSetFilter a b = lift $ loggingSetFilter a b
+  loggingSetDebugFlag = lift . loggingSetDebugFlag
+  loggingDebugFlag = lift loggingDebugFlag
+
+  {-# INLINE logMsgM #-}
+  {-# INLINE logMsgLnM #-}
+  {-# INLINE logMsg #-}
+  {-# INLINE logMsgLn #-}
+  {-# INLINE logMsgE #-}
+  {-# INLINE logMsgLnE #-}
+  {-# INLINE loggingSetFile #-}
+  {-# INLINE loggingSetFilter #-}
+  {-# INLINE loggingSetDebugFlag #-}
+  {-# INLINE loggingDebugFlag #-}
 
 -- | Put message to console on every frame without newline
-logA :: LoggingMonad m => LoggingLevel -> GameWire m Text ()
-logA l = liftGameMonad1 (putMsgM l)
+logDyn :: LoggingMonad t m => LoggingLevel -> Dynamic t LogStr -> m ()
+logDyn lvl = logMsg lvl . current
 
 -- | Put message to console on every frame
-logALn :: LoggingMonad m => LoggingLevel -> GameWire m Text ()
-logALn l = liftGameMonad1 (putMsgLnM l)
+logDynLn :: LoggingMonad t m => LoggingLevel -> Dynamic t LogStr -> m ()
+logDynLn lvl = logMsgLn lvl . current
 
--- | Put message to console on event without newline
-logE :: LoggingMonad m => LoggingLevel -> GameWire m (Event Text) (Event ())
-logE l = liftGameMonadEvent1 (putMsgM l)
-
--- | Put message to console on event
-logELn :: LoggingMonad m => LoggingLevel -> GameWire m (Event Text) (Event ())
-logELn l = liftGameMonadEvent1 (putMsgLnM l)
+-- | Put debug msg to console
+logDebug :: LoggingMonad t m => Behavior t LogStr -> m ()
+logDebug = logMsgLn LogDebug . fmap ("Debug: " <>)
 
 -- | Put info msg to console
-logDebugA :: LoggingMonad m => GameWire m Text ()
-logDebugA = logALn LogDebug . arr ("Debug: " <>)
-
--- | Put info msg to console
-logInfoA :: LoggingMonad m => GameWire m Text ()
-logInfoA = logALn LogInfo . arr ("Info: " <>)
+logInfo :: LoggingMonad t m => Behavior t LogStr -> m ()
+logInfo = logMsgLn LogInfo . fmap ("Info: " <>)
 
 -- | Put warn msg to console
-logWarnA :: LoggingMonad m => GameWire m Text ()
-logWarnA = logALn LogWarn . arr ("Warning: " <>)
+logWarn :: LoggingMonad t m => Behavior t LogStr -> m ()
+logWarn = logMsgLn LogWarn . fmap ("Warn: " <>)
 
 -- | Put error msg to console
-logErrorA :: LoggingMonad m => GameWire m Text ()
-logErrorA = logALn LogError . arr ("Error: " <>)
+logError :: LoggingMonad t m => Behavior t LogStr -> m ()
+logError = logMsgLn LogError . fmap ("Error: " <>)
+
+-- | Put debug msg to console
+logDebugDyn :: LoggingMonad t m => Dynamic t LogStr -> m ()
+logDebugDyn = logDebug . current
+
+-- | Put info msg to console
+logInfoDyn :: LoggingMonad t m => Dynamic t LogStr -> m ()
+logInfoDyn = logInfo . current
+
+-- | Put warn msg to console
+logWarnDyn :: LoggingMonad t m => Dynamic t LogStr -> m ()
+logWarnDyn = logWarn . current
+
+-- | Put error msg to console
+logErrorDyn :: LoggingMonad t m => Dynamic t LogStr -> m ()
+logErrorDyn = logError . current
+
+-- | Put debug msg to console on event
+logDebugE :: LoggingMonad t m => Event t LogStr -> m ()
+logDebugE = logMsgLnE LogDebug . fmap ("Debug: " <>)
 
 -- | Put info msg to console on event
-logDebugE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logDebugE = logELn LogDebug . mapE ("Debug: " <>)
-
--- | Put info msg to console on event
-logInfoE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logInfoE = logELn LogInfo . mapE ("Info: " <>)
+logInfoE :: LoggingMonad t m => Event t LogStr -> m ()
+logInfoE = logMsgLnE LogInfo . fmap ("Info: " <>)
 
 -- | Put warn msg to console on event
-logWarnE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logWarnE = logELn LogWarn . mapE ("Warning: " <>)
+logWarnE :: LoggingMonad t m => Event t LogStr -> m ()
+logWarnE = logMsgLnE LogWarn . fmap ("Warn: " <>)
 
 -- | Put error msg to console on event
-logErrorE :: LoggingMonad m => GameWire m (Event Text) (Event ())
-logErrorE = logELn LogError . mapE ("Error: " <>)
+logErrorE :: LoggingMonad t m => Event t LogStr -> m ()
+logErrorE = logMsgLnE LogError . fmap ("Error: " <>)
 
--- | Prints event with given function
-traceEvent :: LoggingMonad m => (a -> Text) -> GameWire m (Event a) (Event ())
-traceEvent f = logELn LogDebug . mapE f
+-- | Pass through events with possible failures and log them
+logEither :: (LoggingMonad t m) => LoggingLevel -> Event t (Either LogStr a) -> m (Event t a)
+logEither lvl e = do
+  logMsgLnE lvl $ fforMaybe e $ \case
+    Left msg -> Just msg
+    _ -> Nothing
+  return $ fforMaybe e $ \case
+    Right a -> Just a
+    _ -> Nothing
 
--- | Prints event
-traceEventShow :: (TextShow a, LoggingMonad m) => GameWire m (Event a) (Event ())
-traceEventShow = traceEvent showt
+-- | Pass through events with possible failures and log them as warnings
+logEitherWarn :: LoggingMonad t m => Event t (Either LogStr a) -> m (Event t a)
+logEitherWarn = logEither LogWarn . fmap (first ("Warn: " <>))
 
--- | Helper to set logging file as local path
-loggingSetFile :: (LoggingMonad m) => FilePath -- ^ Path to logging file
-  -> Bool -- ^ If 'False', rewrites contents of the file, if 'True' opens in append mode
-  -> m ()
-loggingSetFile fname isAppend = do
-  h <- liftIO $ IO.openFile fname $ if isAppend then AppendMode else WriteMode
-  loggingSetHandle h
+-- | Pass through events with possible failures and log them as errors
+logEitherError :: LoggingMonad t m => Event t (Either LogStr a) -> m (Event t a)
+logEitherError = logEither LogError . fmap (first ("Error: " <>))
+
+-- | Log only when detailed logging is switched on (once)
+logVerboseM :: LoggingMonad t m => LogStr -> m ()
+logVerboseM msg = do
+  flag <- sample . current =<< loggingDebugFlag
+  when flag $ logMsgLnM LogDebug ("Verbose: " <> msg)
+
+-- | Log only when detailed logging is switched on (each frame)
+logVerbose :: LoggingMonad t m => Behavior t LogStr -> m ()
+logVerbose msg = do
+  dynFlag <- loggingDebugFlag
+  void $ dynAppHost $ ffor dynFlag $ \flag -> if flag
+    then logMsgLn LogDebug $ fmap ("Verbose: " <>) msg
+    else return ()
+
+-- | Log only when detailed logging is switched on (each frame)
+logVerboseDyn :: LoggingMonad t m => Dynamic t LogStr -> m ()
+logVerboseDyn = logVerbose . current
+
+-- | Log only when detailed logging is switched on (each fire of event)
+logVerboseE :: LoggingMonad t m => Event t LogStr -> m ()
+logVerboseE msg = do
+  dynFlag <- loggingDebugFlag
+  void $ dynAppHost $ ffor dynFlag $ \flag -> if flag
+    then logMsgLnE LogDebug $ fmap ("Verbose: " <>) msg
+    else return ()
