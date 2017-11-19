@@ -1,5 +1,5 @@
 name:                gore-and-ash-logging
-version:             3.0.0.0
+version:             3.0.1.0
 synopsis:            Core module for gore-and-ash with logging utilities
 description:         Please see README.md
 homepage:            https://github.com/Teaspot-Studio/gore-and-ash-logging
@@ -37,7 +37,7 @@ library
     , containers            >= 0.5.6    && < 0.6
     , deepseq               >= 1.4      && < 1.5
     , exceptions            >= 0.8.0.2  && < 0.9
-    , extra                 >= 1.4.3    && < 1.5
+    , extra                 >= 1.4.3    && < 1.6
     , fast-logger           >= 2.4      && < 2.5
     , gore-and-ash          >= 2.0.0.0  && < 2.1
     , hashable              >= 1.2.4.0  && < 1.3
