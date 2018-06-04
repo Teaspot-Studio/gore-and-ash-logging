@@ -57,7 +57,7 @@ showl :: Show a => a -> LogStr
 showl = toLogStr . show
 
 -- | High-level API for module (intended to be used in components)
-class MonadAppHost t m => LoggingMonad t m | m -> t where
+class MonadGame t m => LoggingMonad t m | m -> t where
   -- | Put message to the console.
   logMsgM :: LoggingLevel -> LogStr -> m ()
   -- | Put message and new line to the console.
@@ -87,7 +87,7 @@ class MonadAppHost t m => LoggingMonad t m | m -> t where
   -- | Return current value of debugging flag
   loggingDebugFlag :: m (Dynamic t Bool)
 
-instance {-# OVERLAPPABLE #-} (MonadAppHost t (mt m), LoggingMonad t m, MonadTrans mt) => LoggingMonad t (mt m) where
+instance {-# OVERLAPPABLE #-} (MonadGame t (mt m), LoggingMonad t m, MonadTrans mt) => LoggingMonad t (mt m) where
   logMsgM lvl msg = lift $ logMsgM lvl msg
   logMsgLnM lvl msg = lift $ logMsgLnM lvl msg
   logMsg lvl msgB = lift $ logMsg lvl msgB
@@ -194,7 +194,7 @@ logVerboseM msg = do
 logVerbose :: LoggingMonad t m => Behavior t LogStr -> m ()
 logVerbose msg = do
   dynFlag <- loggingDebugFlag
-  void $ dynAppHost $ ffor dynFlag $ \flag -> if flag
+  void $ networkView $ ffor dynFlag $ \flag -> if flag
     then logMsgLn LogDebug $ fmap ("Verbose: " <>) msg
     else return ()
 
@@ -206,6 +206,6 @@ logVerboseDyn = logVerbose . current
 logVerboseE :: LoggingMonad t m => Event t LogStr -> m ()
 logVerboseE msg = do
   dynFlag <- loggingDebugFlag
-  void $ dynAppHost $ ffor dynFlag $ \flag -> if flag
+  void $ networkView $ ffor dynFlag $ \flag -> if flag
     then logMsgLnE LogDebug $ fmap ("Verbose: " <>) msg
     else return ()

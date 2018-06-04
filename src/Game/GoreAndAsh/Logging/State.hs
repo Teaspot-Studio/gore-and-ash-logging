@@ -76,7 +76,7 @@ instance NFData (LoggingEnv t) where
      loggingDebug `seq` ()
 
 -- | Create empty module state
-emptyLoggingEnv :: MonadAppHost t m => m (LoggingEnv t)
+emptyLoggingEnv :: MonadGame t m => m (LoggingEnv t)
 emptyLoggingEnv = do
   fileSink <- newExternalRef Nothing
   lfilter <- newExternalRef mempty

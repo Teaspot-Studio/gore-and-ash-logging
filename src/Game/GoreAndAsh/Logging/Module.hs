@@ -12,7 +12,8 @@ Contains description of logging monad transformer and instance for
 'GameModule' class.
 -}
 module Game.GoreAndAsh.Logging.Module(
-    LoggingT(..)
+    LoggingT
+  , runLoggerT
   ) where
 
 import Control.Monad.Base
@@ -51,52 +52,15 @@ import Game.GoreAndAsh.Logging.State
 -- @
 --
 -- See `examples/Example01.hs` for a full example.
-newtype LoggingT t m a = LoggingT { runLoggingT :: ReaderT (LoggingEnv t) m a }
-  deriving (Functor, Applicative, Monad, MonadReader (LoggingEnv t), MonadFix
-    , MonadIO, MonadThrow, MonadCatch, MonadMask, MonadSample t, MonadHold t)
+type LoggingT t = ReaderT (LoggingEnv t)
 
-instance MonadTrans (LoggingT t) where
-  lift = LoggingT . lift
+-- | Execute logger layer in game monad
+runLoggerT :: MonadGame t m => LoggingT t m a -> m a
+runLoggerT ma = do
+  env <- emptyLoggingEnv
+  runReaderT ma env
 
-instance MonadReflexCreateTrigger t m => MonadReflexCreateTrigger t (LoggingT t m) where
-  newEventWithTrigger = lift . newEventWithTrigger
-  newFanEventWithTrigger initializer = lift $ newFanEventWithTrigger initializer
-
-instance MonadSubscribeEvent t m => MonadSubscribeEvent t (LoggingT t m) where
-  subscribeEvent = lift . subscribeEvent
-
-instance MonadAppHost t m => MonadAppHost t (LoggingT t m) where
-  getFireAsync = lift getFireAsync
-  getRunAppHost = do
-    runner <- LoggingT getRunAppHost
-    return $ \m -> runner $ runLoggingT m
-  performPostBuild_ = lift . performPostBuild_
-  liftHostFrame = lift . liftHostFrame
-
-instance MonadTransControl (LoggingT t) where
-  type StT (LoggingT t) a = StT (ReaderT (LoggingEnv t)) a
-  liftWith = defaultLiftWith LoggingT runLoggingT
-  restoreT = defaultRestoreT LoggingT
-
-instance MonadBase b m => MonadBase b (LoggingT t m) where
-  liftBase = LoggingT . liftBase
-
-instance (MonadBaseControl b m) => MonadBaseControl b (LoggingT t m) where
-  type StM (LoggingT t m) a = ComposeSt (LoggingT t) m a
-  liftBaseWith     = defaultLiftBaseWith
-  restoreM         = defaultRestoreM
-
-instance MonadResource m => MonadResource (LoggingT t m) where
-  liftResourceT = LoggingT . liftResourceT
-
-instance (MonadIO (HostFrame t), GameModule t m) => GameModule t (LoggingT t m) where
-  type ModuleOptions t (LoggingT t m) = ModuleOptions t m
-  runModule opts (LoggingT m) = do
-    s <- emptyLoggingEnv
-    runModule opts $ runReaderT m s
-  withModule t _ = withModule t (Proxy :: Proxy m)
-
-instance {-# OVERLAPPING #-} MonadAppHost t m => LoggingMonad t (LoggingT t m) where
+instance {-# OVERLAPPING #-} MonadGame t m => LoggingMonad t (ReaderT (LoggingEnv t) m) where
   logMsgM lvl msg = do
     cntx <- ask
     fileOutput cntx lvl msg

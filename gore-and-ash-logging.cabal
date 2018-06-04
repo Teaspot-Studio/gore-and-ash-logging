@@ -1,5 +1,5 @@
 name:                gore-and-ash-logging
-version:             3.0.1.0
+version:             4.0.0.0
 synopsis:            Core module for gore-and-ash with logging utilities
 description:         Please see README.md
 homepage:            https://github.com/Teaspot-Studio/gore-and-ash-logging
@@ -24,8 +24,6 @@ library
   hs-source-dirs:      src
   exposed-modules:
     Game.GoreAndAsh.Console
-    Game.GoreAndAsh.Console.API
-    Game.GoreAndAsh.Console.Module
     Game.GoreAndAsh.Logging
     Game.GoreAndAsh.Logging.API
     Game.GoreAndAsh.Logging.Module
@@ -39,7 +37,7 @@ library
     , exceptions            >= 0.8.0.2  && < 0.9
     , extra                 >= 1.4.3    && < 1.7
     , fast-logger           >= 2.4      && < 2.5
-    , gore-and-ash          >= 2.0.0.0  && < 2.1
+    , gore-and-ash          >= 3.0      && < 3.1
     , hashable              >= 1.2.4.0  && < 1.3
     , monad-control         >= 1.0      && < 1.1
     , mtl                   >= 2.2      && < 2.3
@@ -76,7 +74,7 @@ executable gore-and-ash-logging-example01
   build-depends:
       base                  >= 4.7      && < 5
     , exceptions            >= 0.8      && < 0.9
-    , gore-and-ash          >= 2.0      && < 2.1
+    , gore-and-ash          >= 3.0      && < 3.1
     , gore-and-ash-logging
     , mtl                   >= 2.2      && < 2.3
 
@@ -110,7 +108,7 @@ executable gore-and-ash-logging-example02
   build-depends:
       base                  >= 4.7      && < 5
     , exceptions            >= 0.8      && < 0.9
-    , gore-and-ash          >= 2.0      && < 2.1
+    , gore-and-ash          >= 3.0      && < 3.1
     , gore-and-ash-logging
     , mtl                   >= 2.2      && < 2.3
 
@@ -144,7 +142,7 @@ executable gore-and-ash-logging-example03
   build-depends:
       base                  >= 4.7      && < 5
     , exceptions            >= 0.8      && < 0.9
-    , gore-and-ash          >= 2.0      && < 2.1
+    , gore-and-ash          >= 3.0      && < 3.1
     , gore-and-ash-logging
     , mtl                   >= 2.2      && < 2.3
 

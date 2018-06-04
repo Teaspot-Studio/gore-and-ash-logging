@@ -31,6 +31,7 @@ module Game.GoreAndAsh.Logging(
   -- * Low-level API
     LoggingEnv
   , LoggingT
+  , runLoggerT
   , LoggingLevel(..)
   , LoggingSink(..)
   , LoggingMonad(..)
